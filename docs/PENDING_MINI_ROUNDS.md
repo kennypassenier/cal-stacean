@@ -166,3 +166,12 @@ it gives up the one thing the current list does well — showing what
 exists outside almanac.
 
 **Review:** at the next work that touches the calendars panel.
+
+## Open after 4.0.1 (2026-09-06, from the chassis-rs session)
+
+| Item | What | Who |
+|---|---|---|
+| CF-7 measurement (chassis-rs) | Log in from Chrome on almanac.kp-soft.dev and delete calendar `almanac-test` — the exact action that was refused on 3.0.0. Claude's half is done on CT 112 (Chrome-header form → 200, cross-site → 403 as a page, script → 403 JSON) | Kenny |
+| latch push | CT 112's latch clone holds the `ALMANAC_BOOTSTRAP_TOKEN` → `ALMANAC_TOKEN` rename (and the dropped `ALMANAC_CAPTURE_TOKEN`) as an uncommitted `.env.enc` change; CT 112 has no PAT, so GitHub (kennypassenier/secrets, almanac/dev) is behind until `latch push` runs from a machine with one — or the PC gets PAT + key and Claude does it | Kenny |
+| D5 · scaffold files | `chassis sync` reports 657 lines of drift (no `deny.toml`, own `ci.yml`, older hooks). Own step on a branch: `chassis sync --write`, fix what the kit CI turns red (the login token in the container check), report item | Claude, next |
+| `trusted_proxies` empty | Startup warning since 3.0.0: behind Traefik every client shares the proxy's IP; set `ALMANAC_TRUSTED_PROXIES` in the unit/env — announced to the homelab | Homelab Rust session |

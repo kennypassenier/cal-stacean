@@ -17,9 +17,9 @@ Phase 5.)
 
 | Field | Value |
 |---|---|
-| Current phase | done — 1.3.1 live, updates handed to the homelab |
-| Last completed gate | Phase 10 closed; update ownership handed to the homelab — 2026-08-30 |
-| Next gate | none — the homelab's own 3.2.0 client still has to ship before its nightly supervised update can run |
+| Current phase | done — **4.0.1 live on CT 112 since 2026-09-06 16:52 UTC** (chassis-rs 1.5.1: kit dashboard, per-source tokens in the kit's client store, captures on the Sources row per K13, CF-7 fix for browser forms). 3.0.0 kept as `/opt/almanac/bin/almanac.3.0.0`, 2.4.0 unit and binary still present |
+| Last completed gate | chassis-rs report form 2026-09-06 18:55 (R2 almanac 4.0.1 Akkoord, D4 latch rename by Claude on CT 112, D5 scaffold sync as its own step) — run from the chassis-rs session with Kenny's rule 7a suspension |
+| Next gate | Kenny's half of chassis-rs CF-7: log in from Chrome on almanac.kp-soft.dev and delete calendar `almanac-test`; `latch push` of project almanac/dev from a machine with a PAT (CT 112's clone carries the `ALMANAC_TOKEN` rename uncommitted to GitHub). Then D5: `chassis sync --write` on a branch, kit CI green, report item |
 | AFK mode | off since 2026-08-28 |
 | Updates | **the homelab owns them** since 2026-08-30. `ALMANAC_SELF_UPDATE=off` on CT 112; `stacks/almanac/service.yml` carries `update_cmd: runuser -u almanac -- /opt/almanac/almanac update`. Exactly one of the two may ever be armed |
 | Open, gated on Kenny | the reboot and self-update drills, the Traefik route (deliberately not assumed — every source is on the LAN), the service account's `cal-stacean` display name, and who owns updates once the homelab supervises CT 112 |
