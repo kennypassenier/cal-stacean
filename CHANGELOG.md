@@ -11,6 +11,8 @@ against before it installs anything.
 
 ## [Unreleased]
 
+## [4.0.1] - 2026-09-06
+
 Built on chassis-rs v1.5.1. 4.0.0 was signed but never installed: it
 carries the kit fault below, so 4.0.1 is the first 4.x that runs.
 
