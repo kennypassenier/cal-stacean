@@ -19,6 +19,12 @@ User=almanac
 Group=almanac
 EnvironmentFile=/etc/almanac/latch.env
 # 3.0.0: the state root is the 2.x layout, so nothing moves — profiles/ and
+# data/ stay where they are. This file is the golden unit for a FRESH install
+# (state under /opt/almanac, env file under /etc/almanac, latch's prod env).
+# CT 112 differs and its unit says so: state root and env file under
+# /appdata/almanac/almanac-config (the homelab's config dir), `latch run --`
+# without --env, measured and installed 2026-09-06; the homelab's stack file
+# is the authority for that box.
 # data/ stay under /opt/almanac; the binary sits in /opt/almanac/bin.
 Environment=ALMANAC_STATE_DIR=/opt/almanac
 WorkingDirectory=/opt/almanac

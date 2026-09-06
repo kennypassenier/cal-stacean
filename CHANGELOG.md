@@ -32,7 +32,9 @@ self-update. The environment and `/healthz` change, hence 3.0.0.
   warning; unset it and the kit derives it from the repository. `RUST_LOG`
   → `ALMANAC_LOG` (`ALMANAC_LOG_FORMAT=json` is new). **`ALMANAC_STATE_DIR`
   must point at an existing directory** (the kit probes it at `--check` and
-  start; on CT 112 that is `/opt/almanac`, so nothing moves). The per-path
+  start; on CT 112 that is `/appdata/almanac/almanac-config` — measured at
+  the 3.0.0 install on 2026-09-06; `/opt/almanac` holds only the binary,
+  its `.prev` copies and latch's store — so nothing moves). The per-path
   overrides (`ALMANAC_PROFILES_DIR`, `_DATA_DIR`, `_JOURNAL`, `_TOKEN_STORE`)
   still work but are deprecated in favour of the one root (K20).
   Unchanged: `ALMANAC_SECRET_KEY`, `ALMANAC_BOOTSTRAP_TOKEN`,
