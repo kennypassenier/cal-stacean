@@ -17,8 +17,8 @@ Phase 5.)
 
 | Field | Value |
 |---|---|
-| Current phase | 10 · Retrospective — done 2026-09-06. Phases 0–10 complete; the kit is at **1.7.0** (issue-form fields + on_client_issued/on_client_deleted hooks, deny_ignore knob, explicit STATE_DIR in the units). Kenny's order: chassis-rs first, then almanac (4.0.2 in flight), kyu (needs .chassis.toml), kyu-runner, http-switchboard |
-| Last completed gate | S1/S2 form 2026-09-06 21:30: fields + hooks (kit 1.7.0, released), no schema column; kit 1.7.0 first, then one Almanac 4.0.2 |
+| Current phase | done — **4.0.1 live on CT 112 since 2026-09-06 16:52 UTC**; **4.0.2 released to the signature 2026-09-06 23:05** (tag `v4.0.2` = `86b7573`, chassis-rs 1.7.0): one Sources page on the kit (name + calendar in the issue form, profile and token in one go), Calendars page at `/calendars`, scaffold synced, three reviewed `deny_ignore` advisories |
+| Last completed gate | chassis-rs form S1/S2 (2026-09-06 21:30): one Sources page via the kit's issue-form fields and hooks, no schema column; kit 1.7.0 first, then this 4.0.2 — run from the chassis-rs session with Kenny's rule 7a suspension |
 | Next gate | Kenny signs v4.0.2; Claude installs it on CT 112 (same path as 4.0.1); Kenny's CF-8 measurement from Chrome: one Sources page (name + calendar in the issue form, calendar column by name), Calendars page with the id behind a toggle, no horizontal scroll. Then `latch push` of the almanac secrets from a machine with a PAT (still open) |
 | AFK mode | off since 2026-08-28 |
 | Updates | **the homelab owns them** since 2026-08-30. `ALMANAC_SELF_UPDATE=off` on CT 112; `stacks/almanac/service.yml` carries `update_cmd: runuser -u almanac -- /opt/almanac/almanac update`. Exactly one of the two may ever be armed |
