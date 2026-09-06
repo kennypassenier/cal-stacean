@@ -77,7 +77,7 @@ the AFK queue that closed empty.
 | `GET` | `/metrics` | Prometheus counters, no authentication — monitoring that cannot log in reports a healthy service as down |
 | `GET` | `/v1/debug/status` | Profiles, journal depth and recent routing decisions |
 | `POST` | `/v1/ping` | "Does my token work?" — 200 for any client; the Sources row shows the request |
-| `GET` | `/` | Operator UI (the kit's): status; `/sources` profiles and calendars, `/clients` tokens and each source's last requests |
+| `GET` | `/` | Operator UI (the kit's): status; `/clients` (Sources) every source with its calendar, token and last requests; `/calendars` the calendars and the profile files |
 
 Ingest endpoints authenticate with that source's own bearer token. The
 debug endpoints and the dashboard use the operator's credential, and

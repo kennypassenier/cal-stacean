@@ -1,0 +1,68 @@
+{% extends "layout.html" %}
+{% block title %}Calendars · {{ app_name }}{% endblock %}
+{% block content %}
+<h1>Calendars</h1>
+<p class="explain">Every calendar the service account can see. A source is added on the <a href="/clients">Sources</a> page: its name, the calendar it writes to and its token in one go. A calendar a source still writes to cannot be deleted here; delete the source first.</p>
+{% if error %}
+<div class="kp-alert kp-alert--danger" role="alert">{{ error }}</div>
+{% endif %}
+{% if calendars %}
+<div class="kp-table-wrap">
+<table class="kp-table">
+  <thead><tr><th>Name</th><th>Used by</th><th></th></tr></thead>
+  <tbody>
+  {% for c in calendars %}
+  <tr>
+    <td>{{ c.name }} <details style="display: inline-block; margin-left: 0.5rem"><summary class="text-secondary" style="cursor: pointer; font-size: 0.875rem">id</summary><code style="font-size: 0.8125rem; word-break: break-all">{{ c.id }}</code></details></td>
+    <td>{% if c.in_use_by %}{{ c.in_use_by | join(", ") }}{% else %}<span class="text-secondary italic">nothing</span>{% endif %}</td>
+    <td class="text-end">{% if not c.in_use_by %}
+      <form method="post" action="/calendars/{{ c.id }}/delete" style="margin: 0">
+        <button type="submit" class="kp-button kp-button--destructive" data-kp-destructive data-kp-confirm="Delete the calendar &quot;{{ c.name }}&quot; and everything on it?">Delete</button>
+      </form>{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% elif not calendar_error %}
+<p class="text-secondary italic">The service account sees no calendars yet.</p>
+{% endif %}
+{% if calendar_error %}<p class="text-secondary" style="font-size: 0.875rem">Google could not be asked for the calendars: {{ calendar_error }}</p>{% endif %}
+{% if can_create %}
+<form method="post" action="/calendars" style="margin-top: 0.5rem">
+  <div class="kp-field"><label class="kp-field__label" for="name">New calendar</label>
+    <input class="kp-field__input" id="name" name="name" placeholder="Household" required></div>
+  <button type="submit" class="kp-button">Make and share it</button>
+</form>
+{% else %}
+<p class="text-secondary" style="font-size: 0.875rem">Almanac cannot make calendars: <code>ALMANAC_CALENDAR_OWNER</code> is not set, so a new calendar would belong to the service account and be visible to nobody.</p>
+{% endif %}
+
+<h2>Profile files</h2>
+<p class="explain">Every source has a mapping profile in <code>{{ profiles_dir }}</code>; the Sources page writes it when a source is added. A profile placed there by hand is picked up on reload.</p>
+<form method="post" action="/sources/reload" style="margin: 0 0 0.5rem">
+  <button type="submit" class="kp-button">Reload profiles from disk</button>
+</form>
+{% if unusable %}
+<h3>Not being served</h3>
+<p class="explain">These files are in the profiles directory and Almanac cannot use them, so the sources they describe receive nothing — a post to one answers 401, the same as an unknown source.</p>
+<div class="kp-table-wrap">
+<table class="kp-table">
+  <thead><tr><th>File</th><th>Reason</th><th></th></tr></thead>
+  <tbody>
+  {% for u in unusable %}
+  <tr>
+    <td><code>{{ u.file_name }}</code></td>
+    <td class="text-secondary">{{ u.reason }}</td>
+    <td class="text-end">
+      <form method="post" action="/profiles/{{ u.file_name }}/delete" style="margin: 0">
+        <button type="submit" class="kp-button kp-button--destructive" data-kp-destructive data-kp-confirm="Delete the file {{ u.file_name }}? It is not being served, and this removes it from disk.">Delete</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

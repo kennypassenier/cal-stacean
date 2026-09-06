@@ -729,13 +729,18 @@ tokens and the door move to chassis-rs. Almanac 4.0.0.
   `/clients`. `POST /v1/ping` answers any client (the **Send test**
   target). AR25 ("never restart under an investigation") retires with it.
   Proven by `tests/kit_dashboard.rs::a_ping_from_a_source_lands_on_its_row_as_a_last_request`.
-- **K21 (manage sources).** Adding a source writes the profile and loads
-  it without a restart as before; its token is then issued on the kit's
-  Sources page (two steps instead of one button). Deleting a source removes
-  its profile and its kit client. Reload and the unusable-files list are
-  unchanged.
-- **K24 (calendars).** Unchanged in behaviour, rendered by the `/sources`
-  template; the create-lag and delete-lag memories still apply.
+- **K21 (manage sources) — amended 2026-09-06 (S1, 4.0.2).** One Sources
+  page: the kit's clients page with a calendar field on the issue form
+  (`client_form_field`), a Calendar column by name, and Almanac's profile
+  written in `on_client_issued` (a bad name or no calendar refuses the
+  issue; a source with a profile on disk keeps it) and removed in
+  `on_client_deleted` (refused while events wait in the journal). The
+  4.0.0 step ("two steps instead of one button") lasted one release.
+  Proven by `tests/kit_dashboard.rs` (k21_*).
+- **K24 (calendars).** Rendered by the `/calendars` page since 4.0.2 (the id
+  behind an *id* toggle, the profile files and the reload button below);
+  `/sources` and `/dashboard/sources` redirect there. The create-lag and
+  delete-lag memories still apply.
 - **K25 (themes).** The kit's layout ships kp-themes 3.1.0 and its picker;
   Almanac's vendored copy, Bootstrap, `theme-bridge.css`, the checksum gate
   and the picker tests are gone.

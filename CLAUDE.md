@@ -19,7 +19,7 @@ Phase 5.)
 |---|---|
 | Current phase | 10 · Retrospective — done 2026-09-06. Phases 0–10 complete; the kit is at **1.7.0** (issue-form fields + on_client_issued/on_client_deleted hooks, deny_ignore knob, explicit STATE_DIR in the units). Kenny's order: chassis-rs first, then almanac (4.0.2 in flight), kyu (needs .chassis.toml), kyu-runner, http-switchboard |
 | Last completed gate | S1/S2 form 2026-09-06 21:30: fields + hooks (kit 1.7.0, released), no schema column; kit 1.7.0 first, then one Almanac 4.0.2 |
-| Next gate | Report form after Almanac 4.0.2 (one Sources page, Calendars page, deny exceptions, scaffold sync) is released and installed on CT 112 — the CF-8 measurement (Kenny opens /clients and /calendars from Chrome). Theming/spacing/dialog with Kenny in the kp-themes session. Then kyu 3.0.0 (.chassis.toml first), kyu-runner, http-switchboard step 2 |
+| Next gate | Kenny signs v4.0.2; Claude installs it on CT 112 (same path as 4.0.1); Kenny's CF-8 measurement from Chrome: one Sources page (name + calendar in the issue form, calendar column by name), Calendars page with the id behind a toggle, no horizontal scroll. Then `latch push` of the almanac secrets from a machine with a PAT (still open) |
 | AFK mode | off since 2026-08-28 |
 | Updates | **the homelab owns them** since 2026-08-30. `ALMANAC_SELF_UPDATE=off` on CT 112; `stacks/almanac/service.yml` carries `update_cmd: runuser -u almanac -- /opt/almanac/almanac update`. Exactly one of the two may ever be armed |
 | Open, gated on Kenny | the reboot and self-update drills, the Traefik route (deliberately not assumed — every source is on the LAN), the service account's `cal-stacean` display name, and who owns updates once the homelab supervises CT 112 |

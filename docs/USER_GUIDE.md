@@ -73,19 +73,18 @@ afternoon of reverse-engineering, not a log.
 
 ### 2.2 · Add the source, and send it events
 
-**Adding it takes two fields.** On `/sources`, **Add a
-source** asks for a name and a calendar (K21). The calendar is a
-dropdown of the ones that exist; choose *+ New calendar…* and a box
-appears for its name. Submitting writes the profile, creates the
-calendar if it is a new one and shares it with you, and lists the source
-ready for a token. Live immediately, no restart.
+**Adding it is one issue on the Sources page** (`/clients` in the
+navigation; S1, 4.0.2). **Issue token** asks for a name and the calendar it
+writes to (a dropdown of the calendars the service account sees); one click
+writes the profile and issues the token — the row shows both, with the
+calendar by name. Live immediately, no restart. A source that already has a
+profile on disk keeps it when its token is issued again.
 
-The calendar comes from a dropdown of the ones that exist. To make a
-new one, use the **Calendars** panel below the source list: it lists
-every calendar with the sources that write to it, and offers a delete
-for the ones nothing writes to — deleting a calendar removes every event
-on it, for everyone it is shared with, which is why the button stays
-dead until you have deleted the sources first.
+To make a calendar, use the **Calendars** page: it lists every calendar with
+the sources that write to it (the id sits behind an *id* toggle), offers
+*Make and share it*, and a delete for the ones nothing writes to — deleting
+a calendar removes every event on it, for everyone it is shared with, which
+is why the button stays dead until you have deleted the sources first.
 
 **The profile it writes says only where events land.** Since 2.0.0 that
 is all a profile is:
@@ -184,21 +183,13 @@ curl -s -X POST \
 If a required field is missing, the answer says which field, in which
 profile — not "mapping failed".
 
-### 2.4 · Issue the source its token (K6, M12)
+### 2.4 · The token (K6, M12)
 
-On the **Sources** page the kit provides (`/clients` in the navigation,
-next to Almanac's own Sources page): **Issue token** with the source's
-name gives it one. *Copy command* puts a working `curl` on your
-clipboard without showing the token, *Reveal* shows it for ten seconds.
-Paste it into the source's configuration. Tokens are stored sealed with
-`ALMANAC_SECRET_KEY`; the file on disk never contains the plaintext.
-
-Each source's token opens only its own endpoint. One source's token
-posting as another is rejected exactly like a wrong token — and so is
-an unknown source id, so probing cannot tell "no such source" from
-"wrong token".
-
-Revoking is immediate: the very next request with that token fails.
+The token was issued with the source (2.2). On its row: *Copy command* puts
+a working `curl` on your clipboard without showing the token, *Reveal* shows
+it for ten seconds, *Re-issue* replaces it. Paste it into the source's
+configuration. Tokens are stored sealed with `ALMANAC_SECRET_KEY`; the file
+on disk never contains the plaintext.
 
 ### 2.5 · Point the source at Almanac
 
@@ -254,9 +245,9 @@ The profile's own `external_id_field` wins when both are present.
 
 ### 3.2 · Deleting a source (K21)
 
-*Delete* on `/sources` removes a source entirely: its token (the kit
-client under its name) and its profile file are both gone. It stops posting immediately,
-no restart, and it is off the page.
+*Delete* on the source's row (the Sources page, `/clients`) removes it
+entirely: the token and the profile file are both gone. It stops posting
+immediately, no restart, and it is off the page.
 
 Refused while that source still has events waiting in the journal, with
 the count in the message: deliveries resolve their calendar through the
@@ -354,7 +345,7 @@ not in this repository — they are the household's, not the code's.
 
 | Where | What it tells you |
 |---|---|
-| `/` | The kit's status page: journal, sources, health, updates. `/sources` for profiles and calendars, `/clients` (Sources) for tokens and each source's last requests. The one place to look first. |
+| `/` | The kit's status page: journal, sources, health, updates. `/clients` (Sources) for every source — profile, calendar, token, last requests; `/calendars` for the calendars and the profile files on disk. The one place to look first. |
 | `/v1/debug/status` (K11) | Which profiles are loaded, how deep the journal is, and how recent events were routed. |
 | `/metrics` (M13) | Counters for Prometheus: accepted, delivered, failed, set aside, token refreshes, journal depth. |
 | `/healthz` (M1) | Liveness only. Answers 200 while Google is down, on purpose — Almanac riding out an outage is working correctly, and a health check that goes red would be lying. |

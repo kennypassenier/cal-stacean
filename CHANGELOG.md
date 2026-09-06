@@ -13,7 +13,15 @@ against before it installs anything.
 
 ### Changed
 
-- **Scaffold synced to chassis 1.6.0** (D5): the kit's CI (fmt · clippy ·
+- **One Sources page** (S1, chassis-rs 1.7.0): adding a source is one
+  *Issue token* on the Sources page — name and calendar — which writes the
+  profile and issues the token together; the row shows the calendar by
+  name, its last requests and *Send test*; *Delete* removes profile and
+  token (refused while events wait in the journal). Almanac's own page is
+  now **Calendars** (`/calendars`): the calendars with the id behind a
+  toggle, *Make and share it*, and the profile files on disk with the
+  reload button. `/sources` and `/dashboard/sources` redirect there.
+- **Scaffold synced to chassis 1.7.0** (D5): the kit's CI (fmt · clippy ·
   tests, cargo-deny, container build), hooks, `deny.toml`, Dockerfile and
   deploy files now come from `chassis sync --write`; Almanac's own gates
   (AR13 core boundary, M8 version check) live in
@@ -47,6 +55,9 @@ carries the kit fault below, so 4.0.1 is the first 4.x that runs.
 
 ### Migration
 
+- A runbook that adds a source on `/sources` uses the Sources page
+  (`/clients`) instead: name + calendar in the issue form. `/sources` now
+  redirects to `/calendars`.
 - A system that was pointed at `/v1/debug/capture/<label>` posts to
   `/v1/ping` (or any real route) instead; read the result on its row.
 

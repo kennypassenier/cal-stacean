@@ -45,7 +45,7 @@ which profile, which calendar, and whether it worked.
 
 | Symptom | Most likely cause | How to confirm | Fix |
 |---|---|---|---|
-| The source got **401** | Wrong token, or the source id in the URL does not exist | Both answer the same 401 on purpose, so check the URL first — a typo in `source_id` looks exactly like a bad token | Compare the URL against a loaded profile in `/v1/debug/status`; reissue the token from `/dashboard/sources` |
+| The source got **401** | Wrong token, or the source id in the URL does not exist | Both answer the same 401 on purpose, so check the URL first — a typo in `source_id` looks exactly like a bad token | Compare the URL against a loaded profile in `/v1/debug/status`; re-issue the token on the Sources page (`/clients`) |
 | The source got **202**, nothing on the calendar, `pending` is climbing | Google is unreachable or refusing | `journalctl -u almanac \| grep "delivery failed"` | Read the error's remedy — every error carries one. Nothing is lost; it retries |
 | The source got **202**, `pending` is 0, still nothing | It went to a **different calendar** than you are looking at | `/v1/debug/status` shows the target calendar id per profile | Compare against the calendar you have open. This is the most common false alarm |
 | The source got **422** | The payload does not match the profile | The response names the missing field and the profile | Fix the profile or the payload; check with dry-run first (§5) |

@@ -126,7 +126,9 @@ impl KitHub {
             .post(self.url("/api/clients"))
             .header("cookie", &self.cookie)
             .header("content-type", "application/json")
-            .body(format!(r#"{{"name":"{name}"}}"#))
+            // 4.0.2: the issue form carries the calendar; a source with a
+            // profile on disk keeps it, a new one gets this test calendar.
+            .body(format!(r#"{{"name":"{name}","calendar":"cal-test"}}"#))
             .send()
             .await
             .expect("a response");

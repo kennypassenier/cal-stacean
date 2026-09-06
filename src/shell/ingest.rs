@@ -90,6 +90,10 @@ pub struct AppState {
     /// the service account and invisible to every human until it is
     /// shared, and that mistake has already been made here twice.
     pub calendar_owner: Option<String>,
+    /// The calendars Google last listed (id, name), for the kit's issue form
+    /// and the Target-calendar column, which render synchronously (4.0.2).
+    /// Primed at start, refreshed whenever the Calendars page lists them.
+    pub calendar_names: std::sync::Mutex<Vec<(String, String)>>,
     pub journal: Journal,
     pub client: GoogleCalendarClient,
     pub locks: KeyLocks,
@@ -125,6 +129,7 @@ impl AppState {
             profiles: std::sync::RwLock::new(Arc::new(profiles)),
             profiles_dir: std::path::PathBuf::from("profiles"),
             calendar_owner: None,
+            calendar_names: std::sync::Mutex::new(Vec::new()),
             deleted_calendars: std::sync::Mutex::new(std::collections::HashSet::new()),
             created_calendars: std::sync::Mutex::new(std::collections::HashMap::new()),
             journal,
@@ -180,6 +185,32 @@ impl AppState {
 
     /// Filters Google's list through what almanac knows it deleted, and
     /// forgets the ids Google has caught up on.
+    /// Remember what Google listed, so the synchronous renderers (the kit's
+    /// issue form, the Target-calendar column) have names to show.
+    pub fn remember_calendars(&self, calendars: &[(String, String)]) {
+        if let Ok(mut cache) = self.calendar_names.lock() {
+            *cache = calendars.to_vec();
+        }
+    }
+
+    /// The remembered calendars as `(id, name)` for a dropdown.
+    pub fn calendar_options(&self) -> Vec<(String, String)> {
+        self.calendar_names
+            .lock()
+            .map(|c| c.clone())
+            .unwrap_or_default()
+    }
+
+    /// A calendar's name when it is known; the id otherwise, so a row never
+    /// shows nothing.
+    pub fn calendar_name(&self, id: &str) -> String {
+        self.calendar_names
+            .lock()
+            .ok()
+            .and_then(|c| c.iter().find(|(i, _)| i == id).map(|(_, n)| n.clone()))
+            .unwrap_or_else(|| id.to_string())
+    }
+
     pub fn without_deleted_calendars(
         &self,
         calendars: Vec<(String, String)>,

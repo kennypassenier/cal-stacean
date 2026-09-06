@@ -293,6 +293,27 @@ async fn main() -> ExitCode {
         ),
         Err(e) => return die(format!("{e:#}")),
     }
+    // 4.0.2: the Sources page's calendar dropdown and column render
+    // synchronously from a cache; fill it once now, the Calendars page
+    // refreshes it on every visit.
+    // Off the start path: an unreachable Google must not delay the
+    // listener (N1: the port is bound within seconds, then retries happen).
+    {
+        let state = Arc::clone(&state);
+        tokio::spawn(async move {
+            match state.client.list_calendars().await {
+                Ok(calendars) => {
+                    let calendars =
+                        state.without_deleted_calendars(state.with_created_calendars(calendars));
+                    state.remember_calendars(&calendars);
+                }
+                Err(e) => tracing::warn!(
+                    error = %e,
+                    "could not list the calendars at start; the Sources page shows ids until the Calendars page is opened"
+                ),
+            }
+        });
+    }
     mount(&mut app, Arc::clone(&state));
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let worker: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>> = Arc::new(Mutex::new(None));

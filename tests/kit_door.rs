@@ -108,10 +108,10 @@ async fn the_3x_source_tokens_are_imported_once_and_keep_working() {
         !sources.contains(old_token),
         "the token never appears in the page HTML"
     );
-    let page = hub.page("/sources").await;
+    let page = hub.page("/clients").await;
     assert!(
-        page.contains("issued"),
-        "the profile shows its token as issued: {page}"
+        page.contains("job-tracker") && page.contains("<th>Calendar</th>"),
+        "the imported source sits on the one Sources page with its calendar column: {page}"
     );
     assert!(hub.dir.path().join("clients.json.enc").exists());
     hub.shutdown().await;

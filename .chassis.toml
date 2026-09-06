@@ -4,7 +4,7 @@ name = "almanac"
 description = "Event-to-Google-Calendar hub for the homelab"
 repo = "kennypassenier/almanac"
 toolchain = "1.97"
-chassis_tag = "v1.6.0"
+chassis_tag = "v1.7.0"
 chassis_repo = "https://github.com/kennypassenier/chassis-rs"
 kp_themes = "3.1.0"
 # Measured on CT 112 (2026-09-06, CF-6 d): the state root and the env file
@@ -13,3 +13,11 @@ state_dir = "/appdata/almanac/almanac-config"
 env_file = "/appdata/almanac/almanac-config/latch.env"
 latch_env = ""
 latch = true
+
+# cargo-deny exceptions, each a reviewed decision (2026-09-06, first kit CI run):
+#   RUSTSEC-2023-0071  rsa "Marvin" timing side channel, via jsonwebtoken. Almanac
+#                      only SIGNS the service-account JWT with its own key; no
+#                      decryption oracle is exposed. Drops when jsonwebtoken moves.
+#   RUSTSEC-2024-0384  `instant` unmaintained, pulled in by `backoff`.
+#   RUSTSEC-2025-0012  `backoff` unmaintained; replacing it is an Almanac item.
+deny_ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2024-0384", "RUSTSEC-2025-0012"]

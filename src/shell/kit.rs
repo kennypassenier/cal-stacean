@@ -119,6 +119,88 @@ impl chassis::StatusSection for JournalSection {
 
 /// The Profiles section on the kit's status page (A2-2): which sources
 /// are served, and where their events go.
+/// The calendar a source writes to, by name (K16 column, 4.0.2).
+pub struct TargetCalendar(pub Arc<AppState>);
+
+impl chassis::shell::dashboard::ClientColumn for TargetCalendar {
+    fn title(&self) -> String {
+        "Calendar".into()
+    }
+    fn cell(&self, client: &chassis::shell::clients_api::ClientView) -> String {
+        match self.0.profiles().get(&client.name) {
+            Some(p) => crate::core::html::escape(&self.0.calendar_name(&p.target_calendar_id)),
+            None => "<span class=\"text-secondary italic\">no profile</span>".into(),
+        }
+    }
+}
+
+/// S1 (4.0.2): a source is a name AND a calendar, made in one go on the
+/// kit's Sources page. Refusing here issues no token.
+pub fn create_source(
+    state: &AppState,
+    source_id: &str,
+    calendar: &str,
+) -> Result<(), chassis::Error> {
+    let source_id = source_id.trim();
+    let calendar = calendar.trim();
+    // A source that already has a profile (a 3.x source getting its token
+    // issued again, or one whose profile was placed by hand) keeps it; the
+    // calendar chosen on the form does not overwrite a profile on disk.
+    if state.profiles().contains_key(source_id) {
+        tracing::info!(source_id = %source_id, "token issued for a source that already has a profile");
+        return Ok(());
+    }
+    if !crate::core::profile::source_id_is_safe(source_id) {
+        return Err(chassis::Error::invalid(
+            format!("\"{source_id}\" cannot be a source name"),
+            "use letters, digits, '.', '-' and '_', and do not start with a dot",
+        ));
+    }
+    if calendar.is_empty() {
+        return Err(chassis::Error::invalid(
+            "no calendar chosen",
+            "pick the calendar this source writes to",
+        ));
+    }
+    let toml = crate::core::profile::default_profile_toml(source_id, calendar);
+    crate::shell::profiles::save_new(&state.profiles_dir, &toml)
+        .map_err(|e| chassis::Error::invalid(e.to_string(), e.remedy().to_string()))?;
+    // Reload from disk rather than inserting the parsed profile: reading
+    // it back is the only proof that what was written can be read again.
+    state.set_profiles(crate::shell::profiles::load_map(&state.profiles_dir));
+    tracing::info!(source_id = %source_id, "added a source from the Sources page");
+    Ok(())
+}
+
+/// The other half of S1, asked before the kit deletes the client: the
+/// profile goes with it — unless the journal still holds events for it,
+/// which need the profile to be delivered; then the delete is refused and
+/// the events it already put on the calendar stay either way (Kenny,
+/// 2026-09-03).
+pub fn remove_source(state: &AppState, source_id: &str) -> Result<(), chassis::Error> {
+    if !state.profiles().contains_key(source_id) {
+        return Ok(());
+    }
+    let waiting = state
+        .journal
+        .pending()
+        .map_err(|e| chassis::Error::internal(e.to_string(), e.remedy().to_string()))?
+        .iter()
+        .filter(|e| e.source_id == source_id)
+        .count();
+    if waiting > 0 {
+        return Err(chassis::Error::invalid(
+            format!("{source_id} still has {waiting} event(s) waiting to be delivered"),
+            "wait for the queue to drain, or fix whatever is blocking delivery, and delete it then",
+        ));
+    }
+    let removed = crate::shell::profiles::delete(&state.profiles_dir, source_id)
+        .map_err(|e| chassis::Error::internal(e.to_string(), e.remedy().to_string()))?;
+    state.set_profiles(crate::shell::profiles::load_map(&state.profiles_dir));
+    tracing::info!(source_id = %source_id, removed = %removed.display(), "source profile removed with its client");
+    Ok(())
+}
+
 pub struct ProfilesSection(pub Arc<AppState>);
 
 impl chassis::StatusSection for ProfilesSection {
@@ -128,13 +210,18 @@ impl chassis::StatusSection for ProfilesSection {
         profiles.sort_by(|a, b| a.source_id.cmp(&b.source_id));
         let rows = profiles
             .iter()
-            .map(|p| (p.source_id.clone(), p.target_calendar_id.clone()))
+            .map(|p| {
+                (
+                    p.source_id.clone(),
+                    self.0.calendar_name(&p.target_calendar_id),
+                )
+            })
             .collect();
         chassis::Section {
             title: "Sources".into(),
-            explain: "Every loaded mapping profile and the calendar it writes to; manage them on the Sources pages.".into(),
+            explain: "Every loaded mapping profile and the calendar it writes to; sources are managed on the Sources page, calendars on theirs.".into(),
             rows,
-            html: Some("<p><a class=\"kp-button\" href=\"/sources\">Profiles and calendars</a> <a class=\"kp-button\" href=\"/clients\">Tokens</a></p>".into()),
+            html: Some("<p><a class=\"kp-button\" href=\"/clients\">Sources</a> <a class=\"kp-button\" href=\"/calendars\">Calendars</a></p>".into()),
         }
     }
 }
@@ -205,13 +292,33 @@ pub fn mount(app: &mut App, state: Arc<AppState>) {
     // The machine API behind the kit's door (per-source client tokens, the
     // admin's login token), the pages behind the admin login (A2-2): `/`
     // is the kit's status page with a Journal and a Sources section, the
-    // profiles and calendars live on /sources, and the tokens — with each
-    // source's last requests (K13) — on the kit's clients page, labelled
-    // Sources. Almanac's own captures page went in 4.0.1 (A2-2 revisited).
+    // calendars live on /calendars, and the sources — profile, token and
+    // each source's last requests (K13) — on the kit's clients page,
+    // labelled Sources (S1, 4.0.2).
     app.api_routes(crate::shell::build_router(Arc::clone(&state)));
     app.dashboard_routes(crate::shell::pages(Arc::clone(&state)));
-    app.nav_entry("Sources", "/sources");
+    // S1 (4.0.2): one Sources page — the kit's clients page with a calendar
+    // field on the issue form, a Calendar column, and Almanac's profile
+    // written and removed through the kit's hooks.
     app.clients_label("Sources");
+    let options = Arc::clone(&state);
+    app.client_form_field(chassis::shell::dashboard::ClientFormField::select(
+        "calendar",
+        "Calendar",
+        move || options.calendar_options(),
+    ));
+    let issued = Arc::clone(&state);
+    app.on_client_issued(move |client, fields| {
+        create_source(
+            &issued,
+            &client.name,
+            fields.get("calendar").map(String::as_str).unwrap_or(""),
+        )
+    });
+    let deleted = Arc::clone(&state);
+    app.on_client_deleted(move |client| remove_source(&deleted, &client.name));
+    app.client_column(TargetCalendar(Arc::clone(&state)));
+    app.nav_entry("Calendars", "/calendars");
     app.status_section(JournalSection(Arc::clone(&state)));
     app.status_section(ProfilesSection(state));
     // "Send test" on the Sources page posts a ping with that client's token;
