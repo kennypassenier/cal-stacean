@@ -46,6 +46,7 @@ jobs:
           docker run --rm \
             -v "$PWD/fixtures/profiles:/etc/almanac/profiles:ro" \
             -e ALMANAC_SECRET_KEY=$(printf '1%.0s' $(seq 64)) \
+            -e ALMANAC_TOKEN=a-login-token-for-the-ci-check \
             -e CLIENT_EMAIL=ci@example.iam.gserviceaccount.com \
             -e PRIVATE_KEY=not-a-real-key \
             -e TOKEN_URI=https://oauth2.googleapis.com/token \
