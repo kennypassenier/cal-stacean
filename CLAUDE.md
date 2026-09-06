@@ -17,9 +17,9 @@ Phase 5.)
 
 | Field | Value |
 |---|---|
-| Current phase | done — **4.0.1 live on CT 112 since 2026-09-06 16:52 UTC** (chassis-rs 1.5.1: kit dashboard, per-source tokens in the kit's client store, captures on the Sources row per K13, CF-7 fix for browser forms). 3.0.0 kept as `/opt/almanac/bin/almanac.3.0.0`, 2.4.0 unit and binary still present |
-| Last completed gate | chassis-rs report form 2026-09-06 18:55 (R2 almanac 4.0.1 Akkoord, D4 latch rename by Claude on CT 112, D5 scaffold sync as its own step) — run from the chassis-rs session with Kenny's rule 7a suspension |
-| Next gate | Kenny's half of chassis-rs CF-7: log in from Chrome on almanac.kp-soft.dev and delete calendar `almanac-test`; `latch push` of project almanac/dev from a machine with a PAT (CT 112's clone carries the `ALMANAC_TOKEN` rename uncommitted to GitHub). Then D5: `chassis sync --write` on a branch, kit CI green, report item |
+| Current phase | 10 · Retrospective — done 2026-09-06. Phases 0–10 complete; the kit is at **1.7.0** (issue-form fields + on_client_issued/on_client_deleted hooks, deny_ignore knob, explicit STATE_DIR in the units). Kenny's order: chassis-rs first, then almanac (4.0.2 in flight), kyu (needs .chassis.toml), kyu-runner, http-switchboard |
+| Last completed gate | S1/S2 form 2026-09-06 21:30: fields + hooks (kit 1.7.0, released), no schema column; kit 1.7.0 first, then one Almanac 4.0.2 |
+| Next gate | Report form after Almanac 4.0.2 (one Sources page, Calendars page, deny exceptions, scaffold sync) is released and installed on CT 112 — the CF-8 measurement (Kenny opens /clients and /calendars from Chrome). Theming/spacing/dialog with Kenny in the kp-themes session. Then kyu 3.0.0 (.chassis.toml first), kyu-runner, http-switchboard step 2 |
 | AFK mode | off since 2026-08-28 |
 | Updates | **the homelab owns them** since 2026-08-30. `ALMANAC_SELF_UPDATE=off` on CT 112; `stacks/almanac/service.yml` carries `update_cmd: runuser -u almanac -- /opt/almanac/almanac update`. Exactly one of the two may ever be armed |
 | Open, gated on Kenny | the reboot and self-update drills, the Traefik route (deliberately not assumed — every source is on the LAN), the service account's `cal-stacean` display name, and who owns updates once the homelab supervises CT 112 |
