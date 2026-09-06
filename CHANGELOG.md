@@ -11,6 +11,8 @@ against before it installs anything.
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-09-06
+
 Built on [chassis-rs](https://github.com/kennypassenier/chassis-rs) v1.4.0.
 Ingest, the journal, delivery, the token store, the dashboard and the
 Google client are unchanged; the kit now owns the command line, the
