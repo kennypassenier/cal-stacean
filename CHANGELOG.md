@@ -167,9 +167,11 @@ self-update. The environment and `/healthz` change, hence 3.0.0.
   a newer one appears (kit CF-3). The notifications `almanac-update`,
   `-reverted` and `-unverified` still reach Home Assistant: the kit's
   `on_update_event` (1.3.0, asked for by this migration) hands every update
-  event to Almanac's own notifier. Not reproduced: AR24's "three failed
-  verifications before notifying" — the kit reports an unverified release
-  once, on the first failure.
+  event to Almanac's own notifier. AR24's "three failed verifications
+  before notifying" is the kit's knob since 1.4.0
+  (`ALMANAC_UPDATE_NOTIFY_AFTER_FAILURES`, default 3 — Almanac's value): a
+  failing release host is reported once, on the third failed check, and
+  once more when checks succeed again.
 - **Deployment.** `Type=notify` unit with the kit's hardening and the latch
   wrapper (`deploy/almanac.service`), binary at `/opt/almanac/bin/almanac`,
   `deploy/service.yml` for the homelab stack with `update_cmd`, journald
