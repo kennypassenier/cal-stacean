@@ -12,7 +12,7 @@ tokio = { version = "1", features = ["full"] }
 
 # Web framework for the HTTP API server layer
 axum = { version = "0.8", features = ["form"] }
-chassis = { git = "https://github.com/kennypassenier/chassis-rs", tag = "v1.5.0", version = "1.5.0", default-features = false, features = ["core", "self-update", "dashboard"] } # the shared service kit (3.0.0; dashboard since 4.0.0)
+chassis = { git = "https://github.com/kennypassenier/chassis-rs", tag = "v1.5.1", version = "1.5.1", default-features = false, features = ["core", "self-update", "dashboard"] } # the shared service kit (3.0.0; dashboard since 4.0.0; 1.5.1 = CF-7 fix)
 
 # Structured, leveled logging facade
 tracing = "0.1"
