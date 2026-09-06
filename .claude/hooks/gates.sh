@@ -1,54 +1,40 @@
 #!/usr/bin/env bash
-# Almanac quality gates (standing rules 6/7): format, lint with
-# warnings as errors, full test suite, and the AR13 module boundary.
-# Called by .githooks/pre-commit and .claude/hooks/check-commit.sh;
-# non-zero exit blocks the commit.
+# Project quality gates: format, clippy with warnings as errors, the full
+# test suite, and the clean-tree check. Called by .githooks/pre-commit for
+# every commit and by .claude/hooks/check-commit.sh before Claude's
+# commits; non-zero exit blocks the commit. cargo-deny runs in CI only.
 set -euo pipefail
 
-# ── Standing rule 7: a gate that does not predict the build is not a gate ──
-# The checks below rewrite files. cargo updates Cargo.lock, formatters
-# rewrite sources — and anything rewritten AFTER `git add` is green here
-# and absent from the commit. kyu's 1.0.0 commit carried a lock file
-# still naming version 0.0.0; the container build refused it one step
-# before a release tag, and nothing local had objected. So: fingerprint
-# the tree now, compare once the checks are done, and refuse rather than
-# report a green run over a tree that moved underneath it.
+cd "$(git rev-parse --show-toplevel)"
+
+# Standing rule 7: a gate that does not predict the build is not a gate.
+# The checks rewrite files (cargo refreshes Cargo.lock); anything rewritten
+# AFTER `git add` is green here and absent from the commit, so the tree is
+# fingerprinted before and after and a moved tree is refused.
 gate_tree_fingerprint() {
   { git status --porcelain; git diff; } | sha256sum | cut -d' ' -f1
 }
 gate_tree_before=$(gate_tree_fingerprint)
-cd "$(git rev-parse --show-toplevel)"
 
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
-cargo test --all
+cargo test
 
-# M8: one version. A tag that disagrees with Cargo.toml would make the
-# self-updater either never update or update on every poll.
-./scripts/check-version.sh >/dev/null
-
-# AR13: the core module must stay free of ambient I/O. The compiler
-# cannot enforce a module boundary inside a single crate, so this gate
-# does — a hit below means I/O belongs behind a shell-injected trait.
-if [ -d src/core ]; then
-  if grep -rnE '^[[:space:]]*use[[:space:]]+(reqwest|axum|hyper|tokio::(fs|net|io)|std::(fs|net))' src/core/; then
-    echo "GATE FAILED — src/core imports an I/O crate (AR13)." >&2
-    echo "Move the I/O behind a trait implemented in the shell module." >&2
-    exit 1
-  fi
+# Project-owned gates (chassis 1.6.0, M1): a project keeps its own checks
+# in .claude/hooks/gates.project.sh — a module-boundary grep, a version
+# consistency script, a SQL guard. This file is the kit's and `chassis
+# sync` rewrites it; that one is never touched.
+if [ -x .claude/hooks/gates.project.sh ]; then
+  .claude/hooks/gates.project.sh
 fi
 
-# Standing rule 7, second clause: see gate_tree_fingerprint above.
 if [ "$(gate_tree_fingerprint)" != "$gate_tree_before" ]; then
   {
     echo "gates: the checks rewrote the working tree while they ran."
-    echo "A file changed after it was staged, so what this commit carries is"
-    echo "NOT what was just tested. Most often this is cargo refreshing"
-    echo "Cargo.lock; the changed paths are listed below."
-    echo
+    echo "What this commit carries is NOT what was just tested (usually"
+    echo "Cargo.lock). Changed paths:"
     git status --porcelain
-    echo
-    echo "What now: run 'git add -A' and commit again."
+    echo "What now: stage the changed files and commit again."
   } >&2
   exit 1
 fi

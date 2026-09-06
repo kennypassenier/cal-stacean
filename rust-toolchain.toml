@@ -1,14 +1,7 @@
-# The one Rust this project builds with — here, in CI, and in the image.
-#
-# Standing rule 7: a gate that does not predict the build is not a gate.
-# Without this file the local gate used whatever rustc this machine had
-# while CI asked for "stable", so the same commit could pass here and fail
-# there over a lint the local clippy did not know yet. That happened to
-# kyu one step before a release tag.
-#
-# Raising it is a deliberate act: bump the channel here, the CI job and the
-# Dockerfile base together, then run the gates and fix what the newer
-# clippy has learned to complain about.
+# The one Rust this project builds with, here and in CI (standing rule 7):
+# a gate that does not predict the build is not a gate. Raising it is a
+# deliberate act: bump the channel here and `rust-version` in Cargo.toml
+# together, run the gates, fix what the newer clippy has learned.
 [toolchain]
 channel = "1.97"
 components = ["rustfmt", "clippy"]

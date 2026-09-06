@@ -1,19 +1,9 @@
-# almanac — the golden unit (AR17), as the homelab's answers shaped it.
+# almanac — the golden unit, latch variant (AR17, critic #4).
 #
-# StartLimitIntervalSec/Burst belong in [Unit]: in [Service] systemd
-# ignores them silently ("Unknown key") and a crash loop stops after five
-# tries. Wants= not Requires= for the network, so a slow link after a
-# power cut does not park the unit. Type=notify: the unit is active only
-# once the service sent READY=1 after binding (W9). ReadWritePaths covers
-# the binary's directory too, or self-update verifies, downloads and then
-# fails at the swap.
-#
-# Install: install -D -m755 almanac /opt/almanac/bin/almanac (the
-# service owns that directory: chown -R almanac: /opt/almanac), copy
-# this file to /etc/systemd/system/almanac.service, create the user
-# (almanac), the state dir (/appdata/almanac/almanac-config) and the env file
-# (/appdata/almanac/almanac-config/latch.env, 0640 root:almanac), then
-# systemctl enable --now almanac.
+# `latch run` spawns the service and waits (it does not exec), so latch is
+# the main PID and the service's READY=1 comes from a child: NotifyAccess=all
+# lets systemd accept it. ExecStartPre needs the secrets too, so it also
+# runs under latch. Everything else is the plain unit.
 
 [Unit]
 Description=almanac — Event-to-Google-Calendar hub for the homelab
@@ -24,17 +14,16 @@ StartLimitBurst=0
 
 [Service]
 Type=notify
+NotifyAccess=all
 User=almanac
 Group=almanac
 EnvironmentFile=/appdata/almanac/almanac-config/latch.env
 WorkingDirectory=/appdata/almanac/almanac-config
-ExecStartPre=/opt/almanac/bin/almanac --check
-ExecStart=/opt/almanac/bin/almanac
+ExecStartPre=/usr/local/bin/latch run -- /opt/almanac/bin/almanac --check
+ExecStart=/usr/local/bin/latch run -- /opt/almanac/bin/almanac
 Restart=always
 RestartSec=5s
 KillSignal=SIGTERM
-# Above the service's shutdown_timeout_ms (default 10 s), so N1's bound
-# is the one that decides, not systemd's.
 TimeoutStopSec=60
 # Mirrored so `--check` can warn when the shutdown timeout would outlive it (critic #20).
 Environment=ALMANAC_TIMEOUT_STOP_SECS=60

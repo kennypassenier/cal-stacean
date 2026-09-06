@@ -11,6 +11,17 @@ against before it installs anything.
 
 ## [Unreleased]
 
+### Changed
+
+- **Scaffold synced to chassis 1.6.0** (D5): the kit's CI (fmt · clippy ·
+  tests, cargo-deny, container build), hooks, `deny.toml`, Dockerfile and
+  deploy files now come from `chassis sync --write`; Almanac's own gates
+  (AR13 core boundary, M8 version check) live in
+  `.claude/hooks/gates.project.sh`, which the kit's `gates.sh` and CI run.
+  `.chassis.toml` records CT 112's measured layout (`state_dir`,
+  `env_file`, `latch_env = ""`), so `deploy/almanac-latch.service` and
+  `deploy/service.yml` name the paths that actually run there.
+
 ## [4.0.1] - 2026-09-06
 
 Built on chassis-rs v1.5.1. 4.0.0 was signed but never installed: it

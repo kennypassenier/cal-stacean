@@ -1,20 +1,20 @@
-# Secrets and environment files — AR8: Latch injects secrets into the
-# process directly (`latch run --`), so no .env file should ever exist
-# on disk, but this stays as a safety net.
+# Build output
+/target/
+/target-trixie/
+
+# Local secrets and scratch — never committed (standing rule 10)
 .env
-.env.local
+.env.*
+!.env.example
+/dist/
 
-# Rust build artifacts. Cargo.lock is intentionally NOT ignored: this is
-# a binary application, not a library, and Dockerfile builds with
-# --locked for reproducibility (standing rule 9) — that requires a
-# committed, in-sync lockfile.
-/target
-**/*.rs.bk
+# Editor noise
+*.swp
+.idea/
+.vscode/
 
+# --- project additions below (kept by chassis sync) ---
 # Defense in depth against BUILD-5 (INVENTORY.md): a compiled binary at
 # the repo root should never be tracked again.
 /almanac
 /cal-stacean
-# Release artefacts built by scripts/sign-release.sh — the signed
-# binary and its manifest belong on the GitHub release, not in git.
-dist/

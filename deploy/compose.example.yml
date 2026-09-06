@@ -1,0 +1,20 @@
+# Running the image with docker compose (T7: self-update is off inside an
+# image by detection; updates are a new image). The logging block is the
+# rotation for the container's stdout (H4); without it the json-file driver
+# grows without bound.
+services:
+  almanac:
+    image: ghcr.io/kennypassenier/almanac:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file: /etc/almanac/almanac.env   # ALMANAC_TOKEN, ALMANAC_SECRET_KEY, ALMANAC_PUBLIC_URL
+    volumes:
+      - almanac-state:/var/lib/almanac    # a named volume inherits the image's owner
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+volumes:
+  almanac-state:

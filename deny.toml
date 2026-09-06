@@ -1,0 +1,35 @@
+# Dependency policy: pragmatic, policed. Checked in CI on every push and
+# weekly (advisories move without our code moving).
+
+[advisories]
+yanked = "deny"
+
+[licenses]
+# This service is MIT OR Apache-2.0; dependencies must be permissive.
+# MPL-2.0 is for webauthn-rs, OpenSSL for its crypto, CDLA-Permissive-2.0
+# for the webpki root store. Adding a copyleft dependency is a decision:
+# edit this list in a reviewed commit.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    "MPL-2.0",
+    "OpenSSL",
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+# The kit is a git dependency (SCOPE N3).
+allow-git = ["https://github.com/kennypassenier/chassis-rs"]

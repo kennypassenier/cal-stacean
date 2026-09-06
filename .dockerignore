@@ -1,22 +1,7 @@
-# Exclude the Rust build cache — the Docker builder compiles from scratch.
-target/
-
-# Exclude local environment files that contain credentials.
-# Secrets are injected at runtime via environment variables, not baked in.
+# Keep local secrets and build output out of the image context (S8).
 .env
-.env.example
-
-# Exclude a stray project-root binary, should one ever exist.
-almanac
-
-# Exclude version control metadata.
+.env.*
+target/
+target-trixie/
 .git/
-.gitignore
-
-# Exclude Docker-specific files (no need to copy them into the image).
-Dockerfile
-.dockerignore
-
-# Deployment artifacts are not build inputs.
-deploy/
-dist/
+.chassis.toml
