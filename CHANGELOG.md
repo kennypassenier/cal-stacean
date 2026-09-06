@@ -165,8 +165,11 @@ self-update. The environment and `/healthz` change, hence 3.0.0.
   the homelab). Autonomous checks are deferred while captures are retained
   (AR25, via the kit's update gate); a rolled-back version is skipped until
   a newer one appears (kit CF-3). The notifications `almanac-update`,
-  `-reverted`, `-unverified` are not sent in this version — the kit logs the
-  events; wiring them to Home Assistant is a follow-up decision.
+  `-reverted` and `-unverified` still reach Home Assistant: the kit's
+  `on_update_event` (1.3.0, asked for by this migration) hands every update
+  event to Almanac's own notifier. Not reproduced: AR24's "three failed
+  verifications before notifying" — the kit reports an unverified release
+  once, on the first failure.
 - **Deployment.** `Type=notify` unit with the kit's hardening and the latch
   wrapper (`deploy/almanac.service`), binary at `/opt/almanac/bin/almanac`,
   `deploy/service.yml` for the homelab stack with `update_cmd`, journald

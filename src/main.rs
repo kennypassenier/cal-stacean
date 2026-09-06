@@ -269,6 +269,34 @@ async fn main() -> ExitCode {
             None => Some("the capture buffer is in use (AR25)".to_string()),
         });
     }
+    // D-A1 (kit 1.3.0): the update events keep reaching Home Assistant in
+    // Almanac's own vocabulary (K22 / AR23 / AR24). The kit still logs each
+    // event; this hook runs alongside, on the updater's task, so the send
+    // is spawned rather than awaited. `update.ok` and `update.held` are
+    // routine and stay out of the phone.
+    {
+        let notifier = notifier.clone();
+        app.on_update_event(move |event| {
+            use almanac::shell::notify::{Event as HaEvent, ops};
+            let (op, ok) = match event.kind {
+                "update.installed" => (ops::UPDATE_APPLIED, true),
+                "update.rolled_back" => (ops::UPDATE_REVERTED, false),
+                // The kit's `failed` covers a refused signature or checksum as
+                // well as an unreachable host; AR24's "three strikes before
+                // notifying" is not reproduced here — the kit says it once.
+                "update.failed" => (ops::UPDATE_UNVERIFIED, false),
+                _ => return,
+            };
+            let ha = HaEvent {
+                op,
+                ok,
+                version: event.version.clone(),
+                error: (!ok).then(|| event.detail.clone()),
+            };
+            let notifier = notifier.clone();
+            tokio::spawn(async move { notifier.send(ha).await });
+        });
+    }
     // Public as far as the kit is concerned: ingest carries per-source
     // bearer tokens, admin the bootstrap token, the dashboard its cookie.
     app.api_routes(shell::build_router(Arc::clone(&state)));
