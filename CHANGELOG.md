@@ -11,6 +11,8 @@ against before it installs anything.
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-09-06
+
 Built on [chassis-rs](https://github.com/kennypassenier/chassis-rs) v1.5.0.
 Step 2 of the chassis migration (2026-09-06, form A2-1…A2-4): the kit
 owns the dashboard shell, the login and session, the per-source tokens
