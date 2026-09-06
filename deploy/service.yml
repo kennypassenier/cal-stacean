@@ -5,8 +5,8 @@
 # and waits for the result (critic #7), so "already current" is exit 0
 # without a restart and a failure carries its stderr.
 stack_name: almanac
-vmid: 0
-hostname: 0-app-almanac
+vmid: 112
+hostname: 112-app-almanac
 unit: almanac
 binary: /opt/almanac/bin/almanac
 env_file: /appdata/almanac/almanac-config/latch.env

@@ -4,7 +4,7 @@ name = "almanac"
 description = "Event-to-Google-Calendar hub for the homelab"
 repo = "kennypassenier/almanac"
 toolchain = "1.97"
-chassis_tag = "v1.7.0"
+chassis_tag = "v1.7.1"
 chassis_repo = "https://github.com/kennypassenier/chassis-rs"
 kp_themes = "3.1.0"
 # Measured on CT 112 (2026-09-06, CF-6 d): the state root and the env file
@@ -21,3 +21,5 @@ latch = true
 #   RUSTSEC-2024-0384  `instant` unmaintained, pulled in by `backoff`.
 #   RUSTSEC-2025-0012  `backoff` unmaintained; replacing it is an Almanac item.
 deny_ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2024-0384", "RUSTSEC-2025-0012"]
+# Adopted by the homelab as stack almanac on CT 112 (2026-08-29).
+vmid = 112
