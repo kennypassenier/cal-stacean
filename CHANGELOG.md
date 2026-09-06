@@ -11,6 +11,8 @@ against before it installs anything.
 
 ## [Unreleased]
 
+## [4.0.2] - 2026-09-06
+
 ### Changed
 
 - **One Sources page** (S1, chassis-rs 1.7.0): adding a source is one
