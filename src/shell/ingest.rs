@@ -27,7 +27,7 @@ use tokio::sync::Mutex;
 
 use crate::core::journal::Entry;
 use crate::core::metrics::Metrics;
-use crate::core::observability::{CaptureRecord, RingBuffer, RouteRecord};
+use crate::core::observability::{RingBuffer, RouteRecord};
 use chassis::Caller;
 
 use crate::core::profile::Profile;
@@ -96,22 +96,19 @@ pub struct AppState {
     /// Supplies the acceptance timestamp; injected rather than read
     /// ambiently so tests can pin it.
     pub now: Box<dyn Fn() -> String + Send + Sync>,
-    /// Unix seconds, for the capture surface's expiry arithmetic (M11).
-    /// Separate from `now` so retention never has to parse a timestamp
-    /// back out of a formatted string.
+    /// Unix seconds, next to the formatted `now`, so nothing that needs
+    /// arithmetic has to parse a timestamp back out of a string.
     pub now_unix: Box<dyn Fn() -> u64 + Send + Sync>,
     /// Recent delivery routes, for the K11 debug surface.
     pub routes: Mutex<RingBuffer<RouteRecord>>,
-    /// Verbatim captured requests, for the M11 capture surface.
-    pub captures: Mutex<RingBuffer<CaptureRecord>>,
     /// M13 counters. Shared with the token manager, which is built
     /// before this state exists, so it is an `Arc` rather than owned.
     pub metrics: Arc<Metrics>,
 }
 
-/// How many recent routes and captures to keep. Enough to debug what
-/// just happened; small enough that neither can grow into a memory
-/// problem on a long-running process.
+/// How many recent routes to keep. Enough to debug what just happened;
+/// small enough that it cannot grow into a memory problem on a
+/// long-running process.
 pub const HISTORY_CAPACITY: usize = 100;
 
 impl AppState {
@@ -141,7 +138,6 @@ impl AppState {
                     .unwrap_or(0)
             }),
             routes: Mutex::new(RingBuffer::new(HISTORY_CAPACITY)),
-            captures: Mutex::new(RingBuffer::new(HISTORY_CAPACITY)),
             metrics: Arc::new(Metrics::default()),
         }
     }
@@ -283,42 +279,6 @@ impl AppState {
     pub fn with_metrics(mut self, metrics: Arc<Metrics>) -> Self {
         self.metrics = metrics;
         self
-    }
-
-    /// The capture buffer with everything past its TTL already
-    /// dropped.
-    ///
-    /// Every reader must go through this rather than locking
-    /// `captures` directly. Expiry used to be repeated at each call
-    /// site, and the self-updater's "are captures still retained?"
-    /// check was written without it — so a single capture that nobody
-    /// ever looked at again suppressed every update for the life of
-    /// the process, because the TTL only ever ran while someone was
-    /// reading the page.
-    pub async fn captures_after_expiry(
-        &self,
-    ) -> tokio::sync::MutexGuard<'_, RingBuffer<CaptureRecord>> {
-        let mut captures = self.captures.lock().await;
-        crate::core::observability::expire_captures(
-            &mut captures,
-            (self.now_unix)(),
-            crate::shell::admin::CAPTURE_TTL_SECS,
-        );
-        captures
-    }
-
-    /// How many captures are still within their TTL right now, without
-    /// waiting on the lock (3.0.0: the kit's update gate asks this from a
-    /// synchronous closure). `None` while a reader holds the buffer — the
-    /// caller treats that as "busy", which is also a reason not to restart.
-    pub fn captures_retained_now(&self) -> Option<usize> {
-        let mut captures = self.captures.try_lock().ok()?;
-        crate::core::observability::expire_captures(
-            &mut captures,
-            (self.now_unix)(),
-            crate::shell::admin::CAPTURE_TTL_SECS,
-        );
-        Some(captures.len())
     }
 
     /// Same, but with both clocks pinned — for tests that assert on
@@ -840,54 +800,6 @@ target_calendar_id = "primary"
             json!({}),
         );
         assert_ne!(a.id, b.id);
-    }
-
-    #[tokio::test]
-    async fn a_capture_that_aged_out_no_longer_counts_as_retained() {
-        // AR25 suppresses self-update while captures are retained. The
-        // suppression check used to read the buffer without expiring
-        // it, and expiry only ran while somebody had a capture page
-        // open — so one capture that Kenny looked at once and forgot
-        // stopped every update for the life of the process. Months of
-        // releases, including security fixes, silently never installed.
-        let state = state_with("home-assistant", "tok").await;
-
-        // The pinned clock is 1_787_000_000 and the TTL is an hour, so
-        // this record is two hours old.
-        state.captures.lock().await.push(CaptureRecord {
-            at: "2026-08-28T07:00:00+00:00".to_string(),
-            at_unix: 1_787_000_000 - 7_200,
-            label: "unknown-webhook".to_string(),
-            method: "POST".to_string(),
-            headers: Vec::new(),
-            body: "{}".to_string(),
-            truncated_from_bytes: None,
-        });
-
-        assert!(
-            state.captures_after_expiry().await.is_empty(),
-            "an expired capture must not keep suppressing self-update"
-        );
-    }
-
-    #[tokio::test]
-    async fn a_fresh_capture_does_still_count_as_retained() {
-        // The other half: expiry must not throw away a capture Kenny
-        // is actually looking at, or a restart would discard exactly
-        // the requests he is reverse-engineering.
-        let state = state_with("home-assistant", "tok").await;
-
-        state.captures.lock().await.push(CaptureRecord {
-            at: "2026-08-28T08:55:00+00:00".to_string(),
-            at_unix: 1_787_000_000 - 300,
-            label: "unknown-webhook".to_string(),
-            method: "POST".to_string(),
-            headers: Vec::new(),
-            body: "{}".to_string(),
-            truncated_from_bytes: None,
-        });
-
-        assert_eq!(state.captures_after_expiry().await.len(), 1);
     }
 
     /// State whose calendar client points at a stub, so the

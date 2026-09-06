@@ -154,7 +154,7 @@ is exactly what is wanted there.
 | `/healthz` | none | Uptime Kuma. Liveness only — it stays 200 through a Google outage, because riding one out is correct behaviour |
 | `/metrics` | none | Prometheus. Six counters, journal depth, and a version label. No source labels, deliberately: a source id is one careless profile away from writing a household detail into a metrics database that keeps it for years |
 | `/v1/debug/status` | operator | Profiles, journal depth, recent routing decisions |
-| `/v1/debug/capture` | operator to read, capture-token to write | Verbatim inbound requests, credentials redacted before storage |
+| `/v1/ping` | any client token | "Does my token work?"; the request lands on that source's row (the kit's K13 captures, credentials masked before storage) |
 | `/dashboard` | session | The human view |
 | Home Assistant webhook | — | Five notifications, outbound, for things that need a person |
 

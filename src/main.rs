@@ -243,16 +243,10 @@ async fn main() -> ExitCode {
         Err(e) => return die(e),
     };
 
-    // AR25: never restart under an investigation. The kit's autonomous
-    // loop asks before every check; a retained capture defers it.
-    {
-        let state = Arc::clone(&state);
-        app.update_gate(move || match state.captures_retained_now() {
-            Some(0) => None,
-            Some(n) => Some(format!("{n} capture(s) still retained (AR25)")),
-            None => Some("the capture buffer is in use (AR25)".to_string()),
-        });
-    }
+    // AR25 ("never restart under an investigation") retired in 4.0.1 with
+    // Almanac's own capture store: the kit's per-client captures (K13) are
+    // in memory and lost on restart by the kit's own design, and nothing
+    // durable is at stake between two ticks of the update loop.
     // D-A1 (kit 1.3.0): the update events keep reaching Home Assistant in
     // Almanac's own vocabulary (K22 / AR23 / AR24). The kit still logs each
     // event; this hook runs alongside, on the updater's task, so the send

@@ -1,7 +1,7 @@
 //! Almanac's own dashboard pages on the kit (M12 as amended 2026-09-06,
 //! step 2 of the chassis migration): **Sources** — the mapping profiles,
 //! the calendars they write to and the files that could not be loaded —
-//! and **Captures**. The kit brings the layout, the login and session,
+//! only. The kit brings the layout, the login and session,
 //! the clients page (labelled "Sources" here: the per-source tokens),
 //! CSRF and CSP; this module fills `content` with minijinja templates.
 //!
@@ -20,11 +20,9 @@ use chassis::Dashboard;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::shell::admin::CAPTURE_TTL_SECS;
 use crate::shell::ingest::AppState;
 
 const SOURCES_HTML: &str = include_str!("../../templates/sources.html");
-const CAPTURES_HTML: &str = include_str!("../../templates/captures.html");
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
@@ -34,17 +32,19 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/profiles/{file_name}/delete", post(delete_unusable))
         .route("/calendars", post(create_calendar))
         .route("/calendars/{calendar_id}/delete", post(delete_calendar))
-        .route("/captures", get(captures_page))
         // 3.x addresses keep working: bookmarks and runbooks point here.
         .route("/dashboard", get(|| async { Redirect::to("/") }))
         .route(
             "/dashboard/sources",
             get(|| async { Redirect::to("/sources") }),
         )
+        // 4.0.1: captures live on the source's row of the kit's Sources
+        // page (K13), so the old captures address lands there.
         .route(
             "/dashboard/captures",
-            get(|| async { Redirect::to("/captures") }),
+            get(|| async { Redirect::to("/clients") }),
         )
+        .route("/captures", get(|| async { Redirect::to("/clients") }))
 }
 
 async fn sources_page(
@@ -393,32 +393,4 @@ async fn reload_profiles(State(state): State<Arc<AppState>>) -> Response {
     );
     state.set_profiles(profiles);
     Redirect::to("/sources").into_response()
-}
-
-/// `GET /captures` — what the capture surface (M11) holds right now.
-async fn captures_page(
-    Extension(dash): Extension<Dashboard>,
-    State(state): State<Arc<AppState>>,
-) -> Response {
-    let captures = state.captures_after_expiry().await;
-    let cards: Vec<serde_json::Value> = captures
-        .iter()
-        .map(|c| {
-            json!({
-                "label": c.label,
-                "at": c.at,
-                "headers": c.headers,
-                "body": c.body,
-                "truncated_from_bytes": c.truncated_from_bytes,
-            })
-        })
-        .collect();
-    match dash.render_project(
-        "/captures",
-        CAPTURES_HTML,
-        json!({ "captures": cards, "ttl_minutes": CAPTURE_TTL_SECS / 60 }),
-    ) {
-        Ok(html) => html.into_response(),
-        Err(e) => e.into_response(),
-    }
 }

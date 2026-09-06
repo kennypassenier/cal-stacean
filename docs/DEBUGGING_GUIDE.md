@@ -118,16 +118,15 @@ curl -s -X POST -H "Authorization: Bearer $ALMANAC_TOKEN" \
 Use this before blaming Google. It separates "the mapping is wrong"
 from "the delivery failed" in one call.
 
-### Capture: what is the source actually sending? (M11)
+### Capture: what is the source actually sending? (K13)
 
-Point the source at `/v1/debug/capture/{label}` with a client token from
-the Sources page and read it back with the login token (`ALMANAC_TOKEN`). Headers included, body
-verbatim, credentials redacted.
-
-The redaction is not cosmetic — a captured `Authorization` header is
-replaced before it is ever stored, so the capture buffer cannot become
-the place a token leaks from. Every credential header a webhook might
-send is redacted, not just the obvious one.
+Open the source's row on the Sources page (`/clients`): **Last requests**
+holds what that token sent — method, path, headers with credentials
+masked, body cut at the kit's limit — for the kit's capture TTL. Point a
+source you are still investigating at `POST /v1/ping` with its client
+token, or press **Send test** on the row. Almanac's own capture endpoint
+went in 4.0.1; the kit's masking is the same rule: an `Authorization`
+header is replaced before it is stored.
 
 ### Metrics: is this a blip or a pattern? (M13)
 

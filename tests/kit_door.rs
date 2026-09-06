@@ -1,6 +1,6 @@
 //! The door and the debug surfaces on the kit (4.0.0, A2-1/A2-3): a
 //! source posts with the client token issued under its own name, the
-//! admin's login token opens the debug views, a capture can be posted with
+//! admin's login token opens the debug views, the ping answers any client with
 //! any client token and read back only by the admin. Ported from
 //! `ingest_http.rs` and `admin_http.rs`, which mounted Almanac's own door.
 
@@ -118,7 +118,7 @@ async fn the_3x_source_tokens_are_imported_once_and_keep_working() {
 }
 
 #[tokio::test]
-async fn the_debug_views_need_the_admin_and_captures_take_any_client() {
+async fn the_debug_views_need_the_admin_and_the_ping_takes_any_client() {
     let hub = spawn_kit().await;
     let client = hub.issue_client("probe").await;
     // Status and dry-run: the admin only.
@@ -137,44 +137,23 @@ async fn the_debug_views_need_the_admin_and_captures_take_any_client() {
     assert_eq!(as_admin.status(), 200);
     let status = body_json(as_admin).await;
     assert_eq!(status["profiles"][0]["source_id"], "home-assistant");
-    // A capture: any client may post one, credentials are redacted.
-    let posted = hub
-        .bearer(
-            reqwest::Method::POST,
-            "/v1/debug/capture/webhook-x",
-            &client,
-        )
-        .header("content-type", "application/json")
-        .header("x-api-key", "very-secret")
-        .body(r#"{"raw":true}"#)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(posted.status(), 200, "{}", posted.text().await.unwrap());
-    // Reading them back: the admin only.
-    let list_as_client = hub
-        .bearer(reqwest::Method::GET, "/v1/debug/capture", &client)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(list_as_client.status(), 403);
-    let list = hub
-        .bearer(reqwest::Method::GET, "/v1/debug/capture", TOKEN)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(list.status(), 200);
-    let captures = body_json(list).await;
-    assert_eq!(captures["captures"][0]["label"], "webhook-x");
-    assert_eq!(captures["captures"][0]["body"], r#"{"raw":true}"#);
-    let headers = captures["captures"][0]["headers"].to_string();
-    assert!(
-        headers.contains("<redacted>") && !headers.contains("very-secret"),
-        "{headers}"
+    // The ping (4.0.1, the test button's target): any client the kit let
+    // in, never an anonymous caller.
+    assert_eq!(
+        hub.bearer(reqwest::Method::POST, "/v1/ping", "not-a-token")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
     );
-    // And the page shows it.
-    let page = hub.page("/captures").await;
-    assert!(page.contains("webhook-x") && !page.contains("very-secret"));
+    let pinged = hub
+        .bearer(reqwest::Method::POST, "/v1/ping", &client)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(pinged.status(), 200);
+    assert_eq!(body_json(pinged).await["caller"], "probe");
     // Health and metrics stay open for monitoring.
     assert_eq!(hub.get_anon("/healthz").await.status(), 200);
     assert_eq!(hub.get_anon("/metrics").await.status(), 200);

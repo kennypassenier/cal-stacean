@@ -11,6 +11,32 @@ against before it installs anything.
 
 ## [Unreleased]
 
+Built on chassis-rs v1.5.1. 4.0.0 was signed but never installed: it
+carries the kit fault below, so 4.0.1 is the first 4.x that runs.
+
+### Fixed
+
+- **Dashboard forms were refused from Chrome** (chassis-rs CF-7, found
+  live on CT 112 with 3.0.0): the kit's CSRF rule now reads
+  `Sec-Fetch-Site` and refusals to a browser render as a page in the
+  layout. Nothing changes in Almanac's own code; the kit bump carries it.
+
+### Changed
+
+- **Captures live on the source's row** (A2-2 revisited): Almanac's own
+  capture store, `POST /v1/debug/capture/{label}`, `GET /v1/debug/capture`
+  and the Captures page are gone. The kit keeps each client's last
+  requests on the Sources page (K13) — the same evidence, credentials
+  masked. `POST /v1/ping` answers 200 to any client and is what **Send
+  test** posts; `/captures` and `/dashboard/captures` redirect to
+  `/clients`. AR25 ("never restart under an investigation") retires with
+  the store.
+
+### Migration
+
+- A system that was pointed at `/v1/debug/capture/<label>` posts to
+  `/v1/ping` (or any real route) instead; read the result on its row.
+
 ## [4.0.0] - 2026-09-06
 
 Built on [chassis-rs](https://github.com/kennypassenier/chassis-rs) v1.5.0.

@@ -47,31 +47,26 @@ a redelivery updates the existing event instead of making a second one
 
 ## 2 · Connecting a new source
 
-### 2.1 · Find out what it actually sends (M11)
+### 2.1 · Find out what it actually sends (K13)
 
-Do not guess the payload shape from documentation. Point the source at
-the capture endpoint and read what really arrives:
+Do not guess the payload shape from documentation. Issue the new source a
+client token on the Sources page (`/clients`, any name, e.g.
+`my-new-thing`), point the source at Almanac with that token — any path
+will do, `POST /v1/ping` answers 200 to any client — and open the
+source's row on the Sources page: **Last requests** shows exactly what
+arrived, method, path, headers (credentials masked) and body (cut at the
+kit's limit), for the kit's capture TTL. The **Send test** button on that
+row posts one ping with the token, so "does my token work?" is one click.
 
 ```bash
-# On the source's side, temporarily send to this instead, with a client
-# token issued for it on the Sources page (any name, e.g. "my-new-thing"):
-POST http://10.10.10.12:8080/v1/debug/capture/my-new-thing
+# On the source's side, temporarily send to this instead:
+POST http://10.10.10.12:8080/v1/ping
 Authorization: Bearer <client token>
 ```
 
-Then read it back, verbatim, headers included, with the login token:
-
-```bash
-curl -s -H "Authorization: Bearer $ALMANAC_TOKEN" \
-  http://10.10.10.12:8080/v1/debug/capture | jq .
-```
-
-A client token can only *post* captures (and, once it has a profile of
-that name, post events) — it cannot read captures back and it opens
-nothing else. That is deliberate: the token you paste into a third-party
-tool while experimenting is the one most likely to end up somewhere it
-should not, so it is the one that can do least. Revoke it on the Sources
-page when the experiment is over.
+Almanac's own capture endpoint and Captures page (3.x–4.0.0, M11) are
+gone since 4.0.1: the kit keeps the same evidence on the row of the
+source that sent it.
 
 Captures live in memory, are capped, and expire. They are for an
 afternoon of reverse-engineering, not a log.
@@ -359,7 +354,7 @@ not in this repository — they are the household's, not the code's.
 
 | Where | What it tells you |
 |---|---|
-| `/` | The kit's status page: journal, sources, health, updates. `/sources` for profiles and calendars, `/clients` (Sources) for tokens, `/captures` for captures. The one place to look first. |
+| `/` | The kit's status page: journal, sources, health, updates. `/sources` for profiles and calendars, `/clients` (Sources) for tokens and each source's last requests. The one place to look first. |
 | `/v1/debug/status` (K11) | Which profiles are loaded, how deep the journal is, and how recent events were routed. |
 | `/metrics` (M13) | Counters for Prometheus: accepted, delivered, failed, set aside, token refreshes, journal depth. |
 | `/healthz` (M1) | Liveness only. Answers 200 while Google is down, on purpose — Almanac riding out an outage is working correctly, and a health check that goes red would be lying. |

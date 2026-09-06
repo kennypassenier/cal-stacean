@@ -719,13 +719,16 @@ tokens and the door move to chassis-rs. Almanac 4.0.0.
   unchanged into the kit's sealed `clients.json.enc` on the first start of
   4.0.0 (`shell::kit::import_source_tokens`), so JobTracker and every
   other source keep their configuration; `tokens.json` stays as history.
-- **M11 (capture).** `POST /v1/debug/capture/{label}` sits behind the
-  kit's door like every API route and accepts any client token (or the
-  admin); `ALMANAC_CAPTURE_TOKEN` is gone — a system under investigation
-  gets a client token from the Sources page, which is exactly as narrow
-  (it cannot read captures back, list status or dry-run: those need the
-  admin). The kit's **Send test** button posts a capture named
-  `dashboard-test`.
+- **M11 (capture) — retired 2026-09-06 (4.0.1, A2-2 revisited).** The
+  kit's K13 (last N requests per client token, on the source's row of the
+  Sources page, credentials masked, body cut) is the capture surface; the
+  kit's own FEATURES said so ("replaces Almanac's captures page") and the
+  A2-2 form of the step-2 session contradicted it. Almanac's capture
+  store, `POST /v1/debug/capture/{label}`, `GET /v1/debug/capture` and the
+  Captures page are gone; `/captures` and `/dashboard/captures` redirect to
+  `/clients`. `POST /v1/ping` answers any client (the **Send test**
+  target). AR25 ("never restart under an investigation") retires with it.
+  Proven by `tests/kit_dashboard.rs::a_ping_from_a_source_lands_on_its_row_as_a_last_request`.
 - **K21 (manage sources).** Adding a source writes the profile and loads
   it without a restart as before; its token is then issued on the kit's
   Sources page (two steps instead of one button). Deleting a source removes

@@ -4,7 +4,7 @@
 //! learns from the outside world reaches `core` through explicit
 //! function calls and trait implementations, never the reverse.
 //!
-//! The ingest routes land in L3; the debug, capture and health
+//! The ingest routes land in L3; the debug and health
 //! surfaces (K11, M11, M1) follow in L4.
 
 pub mod admin;
@@ -43,7 +43,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     ingest::routes().merge(admin::routes()).with_state(state)
 }
 
-/// Almanac's own dashboard pages (Sources, Captures), handed to
+/// Almanac's own dashboard pages (Sources), handed to
 /// `App::dashboard_routes`: the kit renders them inside its layout behind
 /// the admin login and refuses cross-origin form posts (4.0.0).
 pub fn pages(state: Arc<AppState>) -> Router {

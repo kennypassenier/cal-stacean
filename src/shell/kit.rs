@@ -205,20 +205,21 @@ pub fn mount(app: &mut App, state: Arc<AppState>) {
     // The machine API behind the kit's door (per-source client tokens, the
     // admin's login token), the pages behind the admin login (A2-2): `/`
     // is the kit's status page with a Journal and a Sources section, the
-    // profiles and calendars live on /sources, the captures on /captures,
-    // and the tokens on the kit's clients page, labelled Sources.
+    // profiles and calendars live on /sources, and the tokens — with each
+    // source's last requests (K13) — on the kit's clients page, labelled
+    // Sources. Almanac's own captures page went in 4.0.1 (A2-2 revisited).
     app.api_routes(crate::shell::build_router(Arc::clone(&state)));
     app.dashboard_routes(crate::shell::pages(Arc::clone(&state)));
     app.nav_entry("Sources", "/sources");
-    app.nav_entry("Captures", "/captures");
     app.clients_label("Sources");
     app.status_section(JournalSection(Arc::clone(&state)));
     app.status_section(ProfilesSection(state));
-    // "Send test" on the Sources page posts one capture with that client's
-    // token, visible on /captures: "does my token work?" has a button.
+    // "Send test" on the Sources page posts a ping with that client's token;
+    // the round trip shows under the row's Last requests (K13): "does my
+    // token work?" has a button.
     app.test_route(
         "POST",
-        "/v1/debug/capture/dashboard-test",
+        "/v1/ping",
         "application/json",
         r#"{"hello":"from the dashboard"}"#,
     );

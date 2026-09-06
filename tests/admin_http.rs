@@ -1,5 +1,5 @@
 //! The operator surface as real HTTP: health (M1), debug status (K11),
-//! raw capture (M11) and dry-run (M9), driven in-process as the admin.
+//! and dry-run (M9), driven in-process as the admin.
 //! None of these need Google, so they run in CI on every push. The door
 //! (who may call what) is the kit's since 4.0.0: tests/kit_door.rs.
 
@@ -62,7 +62,7 @@ target_calendar_id = "primary"
     ))
 }
 
-/// State with a capture-only token as well (S2).
+/// A GET with an optional bearer token.
 fn get(uri: &str, token: Option<&str>) -> Request<Body> {
     let mut builder = Request::builder().method("GET").uri(uri);
     if let Some(token) = token {
@@ -116,73 +116,6 @@ async fn the_debug_status_reports_profiles_and_the_journal() {
     assert_eq!(body["profiles"][0]["source_id"], "home-assistant");
     assert_eq!(body["profiles"][0]["target_calendar_id"], "primary");
     assert_eq!(body["journal"]["count"], 0);
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[tokio::test]
-async fn a_captured_request_reads_back_verbatim() {
-    // M11's whole purpose: learn an undocumented webhook's real shape.
-    // If the body came back altered, the profile written from it would
-    // be wrong.
-    let dir = scratch_dir("capture");
-    let st = state(&dir, Some(ADMIN_TOKEN));
-    let payload = r#"{"weird":{"nested":[1,2,3]},"unicode":"héllo"}"#;
-
-    let posted = almanac::shell::build_router_with_probes(Arc::clone(&st))
-        .oneshot(post(
-            "/v1/debug/capture/unknown-app",
-            Some(ADMIN_TOKEN),
-            payload,
-        ))
-        .await
-        .unwrap();
-    assert_eq!(posted.status(), StatusCode::OK);
-
-    let listed = almanac::shell::build_router_with_probes(Arc::clone(&st))
-        .oneshot(get("/v1/debug/capture", Some(ADMIN_TOKEN)))
-        .await
-        .unwrap();
-    let body = body_json(listed).await;
-
-    assert_eq!(body["captures"][0]["label"], "unknown-app");
-    assert_eq!(
-        body["captures"][0]["body"].as_str().unwrap(),
-        payload,
-        "the body must come back byte-identical"
-    );
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[tokio::test]
-async fn a_captured_authorization_header_is_redacted() {
-    // Capturing an unknown webhook means capturing whatever it sends,
-    // including its own credentials. Those must not become readable
-    // afterwards just because someone pointed it here.
-    let dir = scratch_dir("capture-redact");
-    let st = state(&dir, Some(ADMIN_TOKEN));
-
-    let posted = almanac::shell::build_router_with_probes(Arc::clone(&st))
-        .oneshot(post("/v1/debug/capture/x", Some(ADMIN_TOKEN), "{}"))
-        .await
-        .unwrap();
-    assert_eq!(posted.status(), StatusCode::OK);
-
-    let listed = almanac::shell::build_router_with_probes(Arc::clone(&st))
-        .oneshot(get("/v1/debug/capture", Some(ADMIN_TOKEN)))
-        .await
-        .unwrap();
-    let raw = serde_json::to_string(&body_json(listed).await).unwrap();
-
-    assert!(
-        !raw.contains(ADMIN_TOKEN),
-        "no captured header may echo a bearer token back:\n{raw}"
-    );
-    assert!(
-        raw.contains("<redacted>"),
-        "and it must say it redacted one"
-    );
 
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -258,96 +191,6 @@ async fn dry_run_on_an_unknown_source_says_where_to_look() {
             .unwrap()
             .contains("/v1/debug/status")
     );
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[tokio::test]
-async fn captures_past_the_capacity_drop_the_oldest_through_the_real_endpoints() {
-    // T13: the cap was tested as a pure ring buffer, never through the
-    // wiring. That is exactly the class of bug that let a forgotten
-    // capture disable self-update for months — the function was right,
-    // the place it was called from was not.
-    let dir = scratch_dir("capture-cap");
-    let state = state(&dir, Some(ADMIN_TOKEN));
-
-    for i in 0..105 {
-        almanac::shell::build_router_with_probes(Arc::clone(&state))
-            .oneshot(post(
-                &format!("/v1/debug/capture/label-{i}"),
-                Some(ADMIN_TOKEN),
-                &format!(r#"{{"n":{i}}}"#),
-            ))
-            .await
-            .unwrap();
-    }
-
-    let response = almanac::shell::build_router_with_probes(Arc::clone(&state))
-        .oneshot(get("/v1/debug/capture", Some(ADMIN_TOKEN)))
-        .await
-        .unwrap();
-    let body = body_json(response).await;
-    let captures = body["captures"].as_array().unwrap();
-
-    assert_eq!(
-        captures.len(),
-        100,
-        "the cap must hold through the endpoints"
-    );
-    assert_eq!(
-        captures[0]["label"], "label-104",
-        "newest first, and the oldest five are gone"
-    );
-    assert!(
-        !captures.iter().any(|c| c["label"] == "label-0"),
-        "the oldest must actually have been dropped"
-    );
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[tokio::test]
-async fn every_credential_header_a_webhook_might_send_is_redacted() {
-    // Capturing an unknown webhook means capturing whatever it sends,
-    // including its own credentials. The only test here asserted the
-    // redaction list was lowercase; nothing proved a real credential
-    // header actually gets redacted, or that the check is
-    // case-insensitive against what a real sender writes.
-    let dir = scratch_dir("capture-redact-all");
-    let state = state(&dir, Some(ADMIN_TOKEN));
-
-    let request = Request::builder()
-        .method("POST")
-        .uri("/v1/debug/capture/x")
-        .header("authorization", format!("Bearer {ADMIN_TOKEN}"))
-        .header("Cookie", "session=super-secret")
-        .header("X-Api-Key", "vendor-api-key-value")
-        .header("Proxy-Authorization", "Basic abc123")
-        .body(Body::from("{}"))
-        .unwrap();
-
-    almanac::shell::build_router_with_probes(Arc::clone(&state))
-        .oneshot(request)
-        .await
-        .unwrap();
-
-    let response = almanac::shell::build_router_with_probes(Arc::clone(&state))
-        .oneshot(get("/v1/debug/capture", Some(ADMIN_TOKEN)))
-        .await
-        .unwrap();
-    let rendered = serde_json::to_string(&body_json(response).await).unwrap();
-
-    for secret in [
-        "super-secret",
-        "vendor-api-key-value",
-        "abc123",
-        ADMIN_TOKEN,
-    ] {
-        assert!(
-            !rendered.contains(secret),
-            "a credential header was stored verbatim: {secret} in {rendered}"
-        );
-    }
 
     std::fs::remove_dir_all(&dir).ok();
 }

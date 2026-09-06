@@ -1,12 +1,12 @@
 //! The dashboard on the kit (M12 as amended 2026-09-06): the kit owns the
 //! door, the layout, the login and the Sources (tokens) page; Almanac keeps
-//! its profiles, calendars and captures pages. Ported from
+//! its profiles and calendars page. Ported from
 //! `dashboard_http.rs`; the login, session, cookie and theme assertions
 //! are the kit's own suite now.
 
 mod common;
 
-use common::{KitHub, spawn_kit, spawn_kit_with, urlencode};
+use common::{KitHub, body_json, spawn_kit, spawn_kit_with, urlencode};
 
 async fn sources(hub: &KitHub) -> String {
     hub.page("/sources").await
@@ -18,7 +18,6 @@ async fn the_kit_owns_the_door_and_the_old_addresses_keep_working() {
     for path in [
         "/",
         "/sources",
-        "/captures",
         "/clients",
         "/dashboard",
         "/dashboard/sources",
@@ -29,7 +28,8 @@ async fn the_kit_owns_the_door_and_the_old_addresses_keep_working() {
     for (old, new) in [
         ("/dashboard", "/"),
         ("/dashboard/sources", "/sources"),
-        ("/dashboard/captures", "/captures"),
+        ("/dashboard/captures", "/clients"),
+        ("/captures", "/clients"),
     ] {
         let response = hub.get(old).await;
         assert_eq!(response.status(), 303, "{old} redirects");
@@ -293,19 +293,41 @@ async fn k23_an_unusable_profile_is_listed_and_can_be_deleted_and_reload_picks_u
 }
 
 #[tokio::test]
-async fn a_captured_script_tag_renders_inert_and_the_test_button_posts_a_capture() {
+async fn a_ping_from_a_source_lands_on_its_row_as_a_last_request() {
+    // A2-2 revisited (2026-09-06): Almanac's own captures page is gone;
+    // the kit keeps each client's last requests on its row (K13). This is
+    // what the Sources page's "Send test" button exercises.
     let hub = spawn_kit().await;
     let token = hub.issue_client("probe").await;
-    let posted = hub
-        .bearer(reqwest::Method::POST, "/v1/debug/capture/xss", &token)
+    let pinged = hub
+        .bearer(reqwest::Method::POST, "/v1/ping", &token)
         .header("content-type", "text/plain")
         .body("<script>alert('pwned')</script>")
         .send()
         .await
         .unwrap();
-    assert_eq!(posted.status(), 200);
-    let page = hub.page("/captures").await;
-    assert!(!page.contains("<script>alert"), "escaped: {page}");
-    assert!(page.contains("&lt;script&gt;"));
+    assert_eq!(pinged.status(), 200);
+    assert_eq!(body_json(pinged).await["caller"], "probe");
+    // The row's "Last requests" button fetches the kit's capture list for
+    // that client; the page itself never holds the bodies.
+    let clients = body_json(hub.get("/api/clients").await).await;
+    let id = clients
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "probe")
+        .and_then(|c| c["id"].as_str())
+        .unwrap()
+        .to_string();
+    let requests = body_json(hub.get(&format!("/api/clients/{id}/requests")).await).await;
+    let listed = requests.to_string();
+    assert!(
+        listed.contains("/v1/ping"),
+        "the row shows the request: {listed}"
+    );
+    assert!(
+        listed.contains("alert('pwned')"),
+        "the body is kept verbatim in the JSON (the page escapes it): {listed}"
+    );
     hub.shutdown().await;
 }
