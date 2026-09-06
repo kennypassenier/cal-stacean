@@ -1,0 +1,110 @@
+{% extends "layout.html" %}
+{% block title %}Sources · {{ app_name }}{% endblock %}
+{% block content %}
+<h1>Sources</h1>
+<p class="explain">A source is a system that posts events to Almanac: a mapping profile (which calendar, which fields) plus a token. The profiles live here; the tokens are issued and revoked on the <a href="/clients">Sources</a> page the kit provides, under the same name.</p>
+{% if error %}
+<div class="kp-alert kp-alert--danger" role="alert">{{ error }}</div>
+{% endif %}
+
+<h2>Profiles</h2>
+{% if profiles %}
+<div class="kp-table-wrap">
+<table class="kp-table">
+  <thead><tr><th>Source</th><th>Target calendar</th><th>Schema</th><th>Token</th><th></th></tr></thead>
+  <tbody>
+  {% for p in profiles %}
+  <tr>
+    <td><code>{{ p.source_id }}</code></td>
+    <td>{{ p.target_calendar_id }}</td>
+    <td class="text-end">{{ p.schema_version }}</td>
+    <td>{% if p.token_issued %}<span class="kp-badge kp-badge--success">issued</span> <span class="text-secondary">{{ p.token_issued }}</span>{% else %}<span class="kp-badge kp-badge--warning">no token</span> <a href="/clients">issue one</a>{% endif %}</td>
+    <td class="text-end">
+      <form method="post" action="/sources/{{ p.source_id }}/delete" style="margin: 0">
+        <button type="submit" class="kp-button kp-button--destructive" data-kp-destructive data-kp-confirm="Delete the source &quot;{{ p.source_id }}&quot;? Its token and its profile both go. Events it already put on the calendar stay.">Delete</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="text-secondary italic">No sources yet. Add one below; Almanac serves nothing until then.</p>
+{% endif %}
+<form method="post" action="/sources/reload" style="margin: 0.5rem 0 0">
+  <button type="submit" class="kp-button">Reload profiles from disk</button>
+  <span class="text-secondary" style="font-size: 0.875rem">for a profile placed by hand in <code>{{ profiles_dir }}</code></span>
+</form>
+
+<h2>Add a source</h2>
+<form method="post" action="/sources">
+  <div class="kp-field"><label class="kp-field__label" for="source_id">Name</label>
+    <input class="kp-field__input" id="source_id" name="source_id" value="{{ draft_source }}" placeholder="job-tracker" required></div>
+  <div class="kp-field"><label class="kp-field__label" for="calendar">Calendar</label>
+    <select class="kp-field__input" id="calendar" name="calendar" required>
+      <option value="">— choose —</option>
+      {% for c in calendars %}<option value="{{ c.id }}"{% if c.id == draft_calendar %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
+    </select></div>
+  {% if calendar_error %}<p class="text-secondary" style="font-size: 0.875rem">Google could not be asked for the calendars: {{ calendar_error }}</p>{% endif %}
+  <button type="submit" class="kp-button kp-button--primary">Add source</button>
+  <span class="text-secondary" style="font-size: 0.875rem">then issue its token on the <a href="/clients">Sources</a> page</span>
+</form>
+
+<h2>Calendars</h2>
+<p class="explain">Every calendar the service account can see. A calendar a source still writes to cannot be deleted here; delete the source first.</p>
+{% if calendars %}
+<div class="kp-table-wrap">
+<table class="kp-table">
+  <thead><tr><th>Name</th><th>Id</th><th>Used by</th><th></th></tr></thead>
+  <tbody>
+  {% for c in calendars %}
+  <tr>
+    <td>{{ c.name }}</td>
+    <td><code>{{ c.id }}</code></td>
+    <td>{% if c.in_use_by %}{{ c.in_use_by | join(", ") }}{% else %}<span class="text-secondary italic">nothing</span>{% endif %}</td>
+    <td class="text-end">{% if not c.in_use_by %}
+      <form method="post" action="/calendars/{{ c.id }}/delete" style="margin: 0">
+        <button type="submit" class="kp-button kp-button--destructive" data-kp-destructive data-kp-confirm="Delete the calendar &quot;{{ c.name }}&quot; and everything on it?">Delete</button>
+      </form>{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% elif not calendar_error %}
+<p class="text-secondary italic">The service account sees no calendars yet.</p>
+{% endif %}
+{% if can_create %}
+<form method="post" action="/calendars" style="margin-top: 0.5rem">
+  <div class="kp-field"><label class="kp-field__label" for="name">New calendar</label>
+    <input class="kp-field__input" id="name" name="name" placeholder="Household" required></div>
+  <button type="submit" class="kp-button">Make and share it</button>
+</form>
+{% else %}
+<p class="text-secondary" style="font-size: 0.875rem">Almanac cannot make calendars: <code>ALMANAC_CALENDAR_OWNER</code> is not set, so a new calendar would belong to the service account and be visible to nobody.</p>
+{% endif %}
+
+{% if unusable %}
+<h2>Not being served</h2>
+<p class="explain">These files are in the profiles directory and Almanac cannot use them, so the sources they describe receive nothing — a post to one answers 401, the same as an unknown source.</p>
+<div class="kp-table-wrap">
+<table class="kp-table">
+  <thead><tr><th>File</th><th>Reason</th><th></th></tr></thead>
+  <tbody>
+  {% for u in unusable %}
+  <tr>
+    <td><code>{{ u.file_name }}</code></td>
+    <td class="text-secondary">{{ u.reason }}</td>
+    <td class="text-end">
+      <form method="post" action="/profiles/{{ u.file_name }}/delete" style="margin: 0">
+        <button type="submit" class="kp-button kp-button--destructive" data-kp-destructive data-kp-confirm="Delete the file {{ u.file_name }}? It is not being served, and this removes it from disk.">Delete</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,18 +1,18 @@
-//! The ingest surface as real HTTP (K6, K7, M7): status codes,
-//! per-source authentication, and the guarantee that a 202 is only
+//! The ingest surface as real HTTP (K7, M7): status codes, journalling,
+//! and the guarantee that a 202 is only
 //! ever returned after the payload is durably journalled.
 //!
 //! Drives the router directly rather than binding a port — the
 //! request/response path is the real one, but nothing here needs
 //! Google, so these run in CI on every push. The parts that genuinely
 //! need Google live in tests/power_loss_drill.rs and
-//! tests/calendar_e2e.rs.
+//! tests/calendar_e2e.rs. The door (K6) is the kit's since 4.0.0 and is
+//! proven in tests/kit_door.rs through the real chassis::App.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use almanac::core::profile::Profile;
-use almanac::core::token::hash_token;
 use almanac::shell::auth::TokenManager;
 use almanac::shell::calendar_client::GoogleCalendarClient;
 use almanac::shell::ingest::AppState;
@@ -23,11 +23,6 @@ use tower::ServiceExt;
 
 const HA_TOKEN: &str = "home-assistant-token";
 const KUMA_TOKEN: &str = "uptime-kuma-token";
-const ADMIN_TOKEN: &str = "bootstrap-admin-token";
-
-fn store_at(dir: &std::path::Path) -> almanac::shell::token_store::TokenStore {
-    almanac::shell::token_store::TokenStore::with_key(dir.join("tokens.json"), [5u8; 32])
-}
 
 fn scratch_dir(name: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!(
@@ -60,14 +55,8 @@ async fn state(dir: &std::path::Path) -> Arc<AppState> {
     profiles.insert("home-assistant".to_string(), profile("home-assistant"));
     profiles.insert("uptime-kuma".to_string(), profile("uptime-kuma"));
 
-    // Tokens live in the encrypted store, not the profile — the single
-    // authentication path since the AR17 amendment.
-    let store = store_at(dir);
-    store
-        .issue("home-assistant", HA_TOKEN, "now")
-        .await
-        .unwrap();
-    store.issue("uptime-kuma", KUMA_TOKEN, "now").await.unwrap();
+    // 4.0.0: the door is the kit's; the in-process router runs every
+    // request as the admin, so the tokens below are decoration.
 
     // Points at an unreachable host: these tests exercise the ingest
     // surface only, and the asynchronous path never calls Google.
@@ -85,8 +74,6 @@ async fn state(dir: &std::path::Path) -> Arc<AppState> {
         profiles,
         Journal::new(journal_path, DEFAULT_MAX_BYTES),
         GoogleCalendarClient::new(http, tokens),
-        Some(hash_token(ADMIN_TOKEN)),
-        store,
     ))
 }
 
@@ -127,96 +114,6 @@ async fn a_valid_home_assistant_payload_is_accepted_and_journalled() {
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].source_id, "home-assistant");
     assert_eq!(pending[0].payload["title"], "Wasmachine klaar");
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[tokio::test]
-async fn a_request_with_no_token_is_rejected_and_journals_nothing() {
-    let dir = scratch_dir("no-token");
-    let state = state(&dir).await;
-    let app = almanac::shell::build_router_with_probes(Arc::clone(&state));
-
-    let response = app
-        .oneshot(post("/v1/ingest/home-assistant", None, ha_payload()))
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert!(
-        state.journal.pending().unwrap().is_empty(),
-        "an unauthenticated payload must not reach the journal"
-    );
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[tokio::test]
-async fn a_request_with_a_wrong_token_is_rejected() {
-    let dir = scratch_dir("wrong-token");
-    let state = state(&dir).await;
-    let app = almanac::shell::build_router_with_probes(Arc::clone(&state));
-
-    let response = app
-        .oneshot(post(
-            "/v1/ingest/home-assistant",
-            Some("not-the-right-token"),
-            ha_payload(),
-        ))
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert!(state.journal.pending().unwrap().is_empty());
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[tokio::test]
-async fn one_sources_token_cannot_post_as_another_source() {
-    // K6's actual promise: tokens are per source, so a leaked or
-    // revoked one is contained to that source.
-    let dir = scratch_dir("cross-source");
-    let state = state(&dir).await;
-    let app = almanac::shell::build_router_with_probes(Arc::clone(&state));
-
-    let response = app
-        .oneshot(post("/v1/ingest/uptime-kuma", Some(HA_TOKEN), ha_payload()))
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert!(state.journal.pending().unwrap().is_empty());
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[tokio::test]
-async fn an_unknown_source_answers_the_same_401_as_a_bad_token() {
-    // Answering 404 here would let an unauthenticated caller
-    // enumerate which sources exist.
-    let dir = scratch_dir("unknown-source");
-    let state = state(&dir).await;
-
-    let unknown = almanac::shell::build_router_with_probes(Arc::clone(&state))
-        .oneshot(post(
-            "/v1/ingest/no-such-source",
-            Some(HA_TOKEN),
-            ha_payload(),
-        ))
-        .await
-        .unwrap();
-    let bad_token = almanac::shell::build_router_with_probes(Arc::clone(&state))
-        .oneshot(post(
-            "/v1/ingest/home-assistant",
-            Some("wrong"),
-            ha_payload(),
-        ))
-        .await
-        .unwrap();
-
-    assert_eq!(unknown.status(), bad_token.status());
-    assert_eq!(unknown.status(), StatusCode::UNAUTHORIZED);
 
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -282,13 +179,7 @@ async fn a_journal_that_cannot_be_written_answers_500_so_the_sender_retries() {
     std::fs::create_dir_all(&readonly).unwrap();
 
     // A state whose journal points inside a directory nothing may
-    // write to, but whose token store is perfectly normal — otherwise
-    // the request would be rejected before it ever reached the write.
-    let store = store_at(&dir);
-    store
-        .issue("home-assistant", HA_TOKEN, "now")
-        .await
-        .unwrap();
+    // write to; the door is the kit's, so the request reaches the write.
 
     let mut profiles = HashMap::new();
     profiles.insert("home-assistant".to_string(), profile("home-assistant"));
@@ -308,8 +199,6 @@ async fn a_journal_that_cannot_be_written_answers_500_so_the_sender_retries() {
                 },
             ),
         ),
-        Some(hash_token(ADMIN_TOKEN)),
-        store,
     ));
 
     #[cfg(unix)]

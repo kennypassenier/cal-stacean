@@ -55,6 +55,7 @@ fn run_with(dir: &std::path::Path, extra: &[(&str, &str)]) -> String {
         // tried, so the key that seals it must be present for the auth
         // failure to be the failure under test.
         .env("ALMANAC_SECRET_KEY", "1".repeat(64))
+        .env("ALMANAC_TOKEN", "a-login-token-for-the-tests")
         .env("CLIENT_EMAIL", "test@example.iam.gserviceaccount.com")
         .env("PRIVATE_KEY", "not-a-key")
         .env("TOKEN_URI", "https://oauth2.googleapis.com/token");
@@ -127,14 +128,14 @@ fn a_malformed_token_store_key_is_reported_without_quoting_it() {
 }
 
 #[test]
-fn the_bootstrap_token_never_reaches_the_output() {
+fn the_login_token_never_reaches_the_output() {
     // This is the credential that logs into the dashboard and can
     // reveal every source's token, so it is the worst single value to
     // leak into journald and from there into a vzdump backup.
-    let marker = "BOOTSTRAP-TOKEN-MARKER-NEVER-LOG-THIS";
+    let marker = "LOGIN-TOKEN-MARKER-NEVER-LOG-THIS";
     let dir = scratch("bootstrap");
 
-    let printed = run_with(&dir, &[("ALMANAC_BOOTSTRAP_TOKEN", marker)]);
+    let printed = run_with(&dir, &[("ALMANAC_TOKEN", marker)]);
     std::fs::remove_dir_all(&dir).ok();
 
     assert!(

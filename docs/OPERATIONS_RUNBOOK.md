@@ -233,7 +233,7 @@ room to act, not after.
 
 ```bash
 journalctl -u almanac -n 100 --no-pager | grep -i "delivery failed"
-curl -H "Authorization: Bearer $ALMANAC_BOOTSTRAP_TOKEN" \
+curl -H "Authorization: Bearer $ALMANAC_TOKEN" \
      http://localhost:8080/v1/debug/status
 ```
 
@@ -306,7 +306,7 @@ under its original `.toml` name, and almanac loads it again on the next
 start — token and all, once one is issued. That is a restore doing
 exactly its job, not a bug, but it means the source list after a restore
 is the list as it was *then*, not as it was left. Check
-`/dashboard/sources` after any restore that reaches back past a
+`/sources` (and the kit's Sources page for the tokens) after any restore that reaches back past a
 retirement.
 
 Recorded on the homelab's side as F250 in the same measurement that
@@ -749,7 +749,7 @@ ERROR almanac: a profile could not be used; this source is not being served
 ```
 
 The count rides on the startup line next to the sources it did load, and
-every unusable file is listed on `/dashboard/sources` under **Not being
+every unusable file is listed on `/sources` under **Not being
 served**, with the reason and a **Delete** button.
 
 **Why it works this way** (Kenny, 2026-09-03): the dashboard is where a

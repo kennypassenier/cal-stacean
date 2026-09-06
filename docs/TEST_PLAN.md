@@ -14,9 +14,10 @@ decision, written down. A gap nobody decided about is a hole.**
 |---|---|
 | unit tests in `src/core/*` | The pure logic: error classification, mapping, the journal's replay model, version comparison, the worker's pacing state machine, token hashing, sealing, HTML escaping, profile validation. No I/O, so these are fast and total. |
 | unit tests in `src/shell/*` | The I/O side against local stubs: the Calendar client's retry loop, token refresh, per-source auth, the encrypted store, the self-updater, the delivery path's calendar routing. |
-| `tests/ingest_http.rs` | The ingest surface as real HTTP: authentication, status codes, journalling, both alert sources' real payloads, and an unwritable journal answering 500. |
-| `tests/admin_http.rs` | The debug and capture surfaces: the admin guard, the capture-only credential's boundary, the capture cap through the real endpoints, header redaction. |
-| `tests/dashboard_http.rs` | The operator UI: login, logout, session expiry, forged cookies, the endpoints that mutate, cookie attributes, and that no page ever renders a token in the clear. |
+| `tests/kit_door.rs` | The door on the kit (4.0.0): a source posts with the client token under its own name and nothing else, the 3.x tokens are imported once and keep working, the debug views need the admin, captures take any client, health and metrics stay open. |
+| `tests/kit_dashboard.rs` | The pages on the kit (4.0.0): the door and the 3.x redirects, the Sources page and its token state, K21 add/delete, K23 unusable files and reload, K24 calendars, captures rendered inert. |
+| `tests/ingest_http.rs`, `tests/admin_http.rs` | The ingest and debug surfaces in-process, as the admin: journalling, idempotency, unwritable journal, dry-run, capture cap and redaction, metrics. |
+| *(the kit's suite)* | Login, logout, sessions, forged cookies, cookie attributes, CSRF, CSP and the never-a-token-in-a-page rule are chassis-rs's to prove since 4.0.0. |
 | `tests/self_update.rs` | Self-update end to end against a local release host with real minisign verification: install, tampered binary, tampered manifest, foreign signing key, unstartable version, downgrade, incomplete release, unreachable host. |
 | `tests/process_lifecycle.rs` | The real binary as a process: SIGTERM draining cleanly, the startup retry after an unreachable Google, a broken key exiting, two processes on one data directory, `--check` against a live instance. |
 | `tests/mapping_regression.rs` | Each source's real payload byte-compared against a pinned event, so a mapping change that alters output is visible in the diff. |
@@ -32,21 +33,21 @@ decision, written down. A gap nobody decided about is a hole.**
 | K3 multiple calendars | `shell::delivery` — two profiles, two calendars, plus the pre-upsert lookup |
 | K4 token refresh | `shell::auth` — reuse, refresh, cold start, and AR18's single-flight |
 | K5 mapping engine | `core::mapping` + the three pinned fixtures |
-| K6 per-source tokens | `shell::ingest`, `tests/ingest_http.rs` |
+| K6 per-source tokens | `shell::ingest` (the name check), `tests/kit_door.rs` (through the kit's door) |
 | K7 durable ingest | `shell::journal`, `tests/ingest_http.rs`, the power-loss drills |
 | K8 synchronous API | `shell::ingest` — delivery, auth, 502-with-payload-kept, and delete including cross-source isolation |
 | K9 alert sources | `mapping_regression` + `tests/ingest_http.rs` at the HTTP layer |
 | K11 debug surface | `tests/admin_http.rs` |
 | K12 secrets via Latch | `tests/no_secrets_in_logs.rs` |
-| K13 health endpoint | `tests/admin_http.rs`, `tests/dashboard_http.rs` |
+| K13 health endpoint | `tests/kit_door.rs` |
 | M2 graceful shutdown | `tests/process_lifecycle.rs` — a real SIGTERM to a serving process |
 | M3 retry with backoff | `shell::calendar_client` — 503-then-success, and a 403 tried once |
 | M4 startup validation | `core::profile`, including the IANA timezone check |
 | M7 idempotency keys | `shell::delivery`, `tests/ingest_http.rs` |
 | M8 one version | `scripts/check-version.sh` in CI and the commit hooks |
 | M10 self-update | `tests/self_update.rs`, `core::update`, `shell::update` |
-| M11 raw capture | `tests/admin_http.rs` — cap, expiry and redaction through the endpoints |
-| M12 dashboard | `tests/dashboard_http.rs`, `shell::token_store` |
+| M11 raw capture | `tests/kit_door.rs` — redaction and the door through the endpoints; `shell::admin` unit tests for the cap |
+| M12 dashboard | `tests/kit_dashboard.rs` (Almanac's pages) and the kit's suite (login, sessions, tokens) |
 | M13 metrics | `core::metrics` for the rendering, `tests/admin_http.rs` for the endpoint, the open-without-a-token rule, and the acceptance criterion asserted against a state holding a token, a calendar id and a household detail |
 
 ## Not covered, by decision

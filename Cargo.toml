@@ -12,7 +12,7 @@ tokio = { version = "1", features = ["full"] }
 
 # Web framework for the HTTP API server layer
 axum = { version = "0.8", features = ["form"] }
-chassis = { git = "https://github.com/kennypassenier/chassis-rs", tag = "v1.4.0", default-features = false, features = ["core", "self-update", "assets"] } # the shared service kit (3.0.0)
+chassis = { git = "https://github.com/kennypassenier/chassis-rs", tag = "v1.5.0", version = "1.5.0", default-features = false, features = ["core", "self-update", "dashboard"] } # the shared service kit (3.0.0; dashboard since 4.0.0)
 
 # Structured, leveled logging facade
 tracing = "0.1"
@@ -77,6 +77,8 @@ chacha20poly1305 = { version = "0.11", default-features = false, features = [
 ] }
 hex = "0.4"
 libc = "0.2.189"
+# The kit harness (tests/common) starts the real App on a scratch state dir.
+tempfile = "3"
 # L5 (M10/AR19): verifies the minisign signature over a release
 # manifest. By the minisign author, ~400 lines, verification only — no
 # key handling, no signing. Hand-rolling Ed25519 signature parsing for

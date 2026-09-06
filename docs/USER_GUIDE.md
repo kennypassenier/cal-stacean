@@ -53,29 +53,32 @@ Do not guess the payload shape from documentation. Point the source at
 the capture endpoint and read what really arrives:
 
 ```bash
-# On the source's side, temporarily send to this instead:
+# On the source's side, temporarily send to this instead, with a client
+# token issued for it on the Sources page (any name, e.g. "my-new-thing"):
 POST http://10.10.10.12:8080/v1/debug/capture/my-new-thing
-Authorization: Bearer $ALMANAC_CAPTURE_TOKEN
+Authorization: Bearer <client token>
 ```
 
-Then read it back, verbatim, headers included:
+Then read it back, verbatim, headers included, with the login token:
 
 ```bash
-curl -s -H "Authorization: Bearer $ALMANAC_BOOTSTRAP_TOKEN" \
+curl -s -H "Authorization: Bearer $ALMANAC_TOKEN" \
   http://10.10.10.12:8080/v1/debug/capture | jq .
 ```
 
-The capture token can only *post* captures — it cannot read them back
-and it opens nothing else (S2). That is deliberate: the token you paste
-into a third-party tool while experimenting is the one most likely to
-end up somewhere it should not, so it is the one that can do least.
+A client token can only *post* captures (and, once it has a profile of
+that name, post events) — it cannot read captures back and it opens
+nothing else. That is deliberate: the token you paste into a third-party
+tool while experimenting is the one most likely to end up somewhere it
+should not, so it is the one that can do least. Revoke it on the Sources
+page when the experiment is over.
 
 Captures live in memory, are capped, and expire. They are for an
 afternoon of reverse-engineering, not a log.
 
 ### 2.2 · Add the source, and send it events
 
-**Adding it takes two fields.** On `/dashboard/sources`, **Add a
+**Adding it takes two fields.** On `/sources`, **Add a
 source** asks for a name and a calendar (K21). The calendar is a
 dropdown of the ones that exist; choose *+ New calendar…* and a box
 appears for its name. Submitting writes the profile, creates the
@@ -177,7 +180,7 @@ The dry-run endpoint shows exactly what a payload would become,
 
 ```bash
 curl -s -X POST \
-  -H "Authorization: Bearer $ALMANAC_BOOTSTRAP_TOKEN" \
+  -H "Authorization: Bearer $ALMANAC_TOKEN" \
   -H "content-type: application/json" \
   -d '{"title":"Bin day","entity_id":"sensor.waste","start":"2026-09-01T07:00:00Z"}' \
   http://10.10.10.12:8080/v1/debug/dry-run/home-assistant | jq .
@@ -188,10 +191,12 @@ profile — not "mapping failed".
 
 ### 2.4 · Issue the source its token (K6, M12)
 
-From the dashboard at `/dashboard/sources`: the source appears in the
-list as soon as it is added (2.2), and *Issue token* gives it one. Paste that into the source's configuration. The token is shown
-once for copying and stored encrypted; the file on disk never contains
-the plaintext.
+On the **Sources** page the kit provides (`/clients` in the navigation,
+next to Almanac's own Sources page): **Issue token** with the source's
+name gives it one. *Copy command* puts a working `curl` on your
+clipboard without showing the token, *Reveal* shows it for ten seconds.
+Paste it into the source's configuration. Tokens are stored sealed with
+`ALMANAC_SECRET_KEY`; the file on disk never contains the plaintext.
 
 Each source's token opens only its own endpoint. One source's token
 posting as another is rejected exactly like a wrong token — and so is
@@ -254,8 +259,8 @@ The profile's own `external_id_field` wins when both are present.
 
 ### 3.2 · Deleting a source (K21)
 
-*Delete* on `/dashboard/sources` removes a source entirely: its token is
-revoked and its profile file is deleted. It stops posting immediately,
+*Delete* on `/sources` removes a source entirely: its token (the kit
+client under its name) and its profile file are both gone. It stops posting immediately,
 no restart, and it is off the page.
 
 Refused while that source still has events waiting in the journal, with
@@ -354,7 +359,7 @@ not in this repository — they are the household's, not the code's.
 
 | Where | What it tells you |
 |---|---|
-| `/dashboard` | Status, sources and tokens, recent captures. The one place to look first. |
+| `/` | The kit's status page: journal, sources, health, updates. `/sources` for profiles and calendars, `/clients` (Sources) for tokens, `/captures` for captures. The one place to look first. |
 | `/v1/debug/status` (K11) | Which profiles are loaded, how deep the journal is, and how recent events were routed. |
 | `/metrics` (M13) | Counters for Prometheus: accepted, delivered, failed, set aside, token refreshes, journal depth. |
 | `/healthz` (M1) | Liveness only. Answers 200 while Google is down, on purpose — Almanac riding out an outage is working correctly, and a health check that goes red would be lying. |

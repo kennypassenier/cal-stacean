@@ -17,8 +17,8 @@ use serde_json::{Value, json};
 
 use crate::core::mapping::map_payload;
 use crate::core::observability::{CaptureRecord, truncate_body};
-use crate::core::token::{parse_bearer, verify_token};
 use crate::shell::ingest::AppState;
+use chassis::Caller;
 
 /// Environment variable holding the bootstrap token. Absent means the
 /// admin surface refuses every request rather than opening up — a
@@ -70,67 +70,23 @@ fn error(status: StatusCode, message: &str, remedy: &str) -> Reply {
     )
 }
 
-/// Checks the request against the bootstrap token.
-fn authorize_admin(state: &AppState, headers: &HeaderMap) -> Result<(), Reply> {
-    let Some(expected) = &state.bootstrap_token_hash else {
-        return Err(error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "the admin surface is not configured",
-            "set ALMANAC_BOOTSTRAP_TOKEN (via `latch run --`) and restart; without it the debug \
-             views stay closed rather than open",
-        ));
-    };
-
-    let presented = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(parse_bearer);
-
-    match presented {
-        Some(token) if verify_token(token, expected) => Ok(()),
-        _ => Err(error(
-            StatusCode::UNAUTHORIZED,
-            "invalid or missing admin token",
-            "send the bootstrap token as `Authorization: Bearer <token>`",
+/// The admin surfaces need the admin (the login token as bearer, or a
+/// session): a client token that opened the kit's door is not enough.
+fn require_admin(caller: &Caller) -> Result<(), Reply> {
+    match caller {
+        Caller::Admin => Ok(()),
+        Caller::Client { .. } => Err(error(
+            StatusCode::FORBIDDEN,
+            "this needs the admin, not a client token",
+            "send the service's login token (ALMANAC_TOKEN) as `Authorization: Bearer <token>`",
         )),
     }
 }
 
-/// Checks the request against the capture-only token, falling back to
-/// the admin token.
-///
-/// Both are accepted deliberately: the operator's own token should not
-/// stop working, and the point of the capture token is that a foreign
-/// system can be given *only* that one. What must never happen is the
-/// reverse — a capture token opening anything else — and it cannot,
-/// because nothing else consults it.
-fn authorize_capture(state: &AppState, headers: &HeaderMap) -> Result<(), Reply> {
-    let presented = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(parse_bearer);
-
-    if let (Some(token), Some(expected)) = (presented, &state.capture_token_hash)
-        && verify_token(token, expected)
-    {
-        return Ok(());
-    }
-
-    authorize_admin(state, headers).map_err(|_| {
-        error(
-            StatusCode::UNAUTHORIZED,
-            "invalid or missing capture token",
-            "send ALMANAC_CAPTURE_TOKEN (or the bootstrap token) as `Authorization: Bearer \
-             <token>`; the capture token is the one to give a system you are still investigating, \
-             because it cannot do anything else",
-        )
-    })
-}
-
 /// `GET /v1/debug/status` (K11) — what is loaded, what is waiting, and
 /// how the recent events were routed.
-async fn debug_status(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Reply {
-    if let Err(reply) = authorize_admin(&state, &headers) {
+async fn debug_status(State(state): State<Arc<AppState>>, caller: Caller) -> Reply {
+    if let Err(reply) = require_admin(&caller) {
         return reply;
     }
 
@@ -184,11 +140,12 @@ async fn capture_post(
     State(state): State<Arc<AppState>>,
     Path(label): Path<String>,
     headers: HeaderMap,
+    caller: Caller,
     body: String,
 ) -> Reply {
-    if let Err(reply) = authorize_capture(&state, &headers) {
-        return reply;
-    }
+    // Any caller the kit let in may post a capture: a client token issued
+    // for the system under investigation, or the admin (A2-3, 2026-09-06).
+    let _ = &caller;
 
     let (stored_body, truncated_from_bytes) = truncate_body(&body, MAX_CAPTURE_BODY_BYTES);
 
@@ -227,8 +184,8 @@ async fn capture_post(
 }
 
 /// `GET /v1/debug/capture` (M11) — read back what was captured.
-async fn capture_list(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Reply {
-    if let Err(reply) = authorize_admin(&state, &headers) {
+async fn capture_list(State(state): State<Arc<AppState>>, caller: Caller) -> Reply {
+    if let Err(reply) = require_admin(&caller) {
         return reply;
     }
 
@@ -252,10 +209,10 @@ async fn capture_list(State(state): State<Arc<AppState>>, headers: HeaderMap) ->
 async fn dry_run(
     State(state): State<Arc<AppState>>,
     Path(source_id): Path<String>,
-    headers: HeaderMap,
+    caller: Caller,
     Json(payload): Json<Value>,
 ) -> Reply {
-    if let Err(reply) = authorize_admin(&state, &headers) {
+    if let Err(reply) = require_admin(&caller) {
         return reply;
     }
 

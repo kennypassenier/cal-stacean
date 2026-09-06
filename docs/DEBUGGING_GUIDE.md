@@ -31,7 +31,7 @@ halves the search immediately.
 
 ```bash
 # Step 2, in full
-curl -s -H "Authorization: Bearer $ALMANAC_BOOTSTRAP_TOKEN" \
+curl -s -H "Authorization: Bearer $ALMANAC_TOKEN" \
   http://10.10.10.12:8080/v1/debug/status | jq .
 ```
 
@@ -110,7 +110,7 @@ failures the entry is set aside with its reason, and the queue moves on.
 No writing, no Google, just the answer:
 
 ```bash
-curl -s -X POST -H "Authorization: Bearer $ALMANAC_BOOTSTRAP_TOKEN" \
+curl -s -X POST -H "Authorization: Bearer $ALMANAC_TOKEN" \
   -H "content-type: application/json" -d @payload.json \
   http://10.10.10.12:8080/v1/debug/dry-run/home-assistant | jq .
 ```
@@ -120,8 +120,8 @@ from "the delivery failed" in one call.
 
 ### Capture: what is the source actually sending? (M11)
 
-Point the source at `/v1/debug/capture/{label}` with the capture token
-and read it back with the operator token. Headers included, body
+Point the source at `/v1/debug/capture/{label}` with a client token from
+the Sources page and read it back with the login token (`ALMANAC_TOKEN`). Headers included, body
 verbatim, credentials redacted.
 
 The redaction is not cosmetic — a captured `Authorization` header is

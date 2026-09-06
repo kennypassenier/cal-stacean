@@ -1,12 +1,12 @@
-//! The operator surface as real HTTP: health (M1), debug status
-//! (K11), raw capture (M11) and dry-run (M9). None of these need
-//! Google, so they run in CI on every push.
+//! The operator surface as real HTTP: health (M1), debug status (K11),
+//! raw capture (M11) and dry-run (M9), driven in-process as the admin.
+//! None of these need Google, so they run in CI on every push. The door
+//! (who may call what) is the kit's since 4.0.0: tests/kit_door.rs.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use almanac::core::profile::Profile;
-use almanac::core::token::hash_token;
 use almanac::shell::auth::TokenManager;
 use almanac::shell::calendar_client::GoogleCalendarClient;
 use almanac::shell::ingest::AppState;
@@ -17,10 +17,6 @@ use http_body_util::BodyExt;
 use tower::ServiceExt;
 
 const ADMIN_TOKEN: &str = "bootstrap-admin-token";
-
-fn store_at(dir: &std::path::Path) -> almanac::shell::token_store::TokenStore {
-    almanac::shell::token_store::TokenStore::with_key(dir.join("tokens.json"), [5u8; 32])
-}
 
 fn scratch_dir(name: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!(
@@ -35,7 +31,7 @@ fn scratch_dir(name: &str) -> std::path::PathBuf {
     dir
 }
 
-fn state(dir: &std::path::Path, admin: Option<&str>) -> Arc<AppState> {
+fn state(dir: &std::path::Path, _admin: Option<&str>) -> Arc<AppState> {
     let journal_path = dir.join("journal.jsonl");
     let toml = r#"
 schema_version = 2
@@ -63,22 +59,10 @@ target_calendar_id = "primary"
         profiles,
         Journal::new(journal_path, DEFAULT_MAX_BYTES),
         GoogleCalendarClient::new(http, tokens),
-        admin.map(hash_token),
-        store_at(dir),
     ))
 }
 
 /// State with a capture-only token as well (S2).
-fn state_with_capture_token(
-    dir: &std::path::Path,
-    admin: Option<&str>,
-    capture: &str,
-) -> Arc<AppState> {
-    let state = state(dir, admin);
-    let state = Arc::try_unwrap(state).ok().expect("sole owner");
-    Arc::new(state.with_capture_token(Some(hash_token(capture))))
-}
-
 fn get(uri: &str, token: Option<&str>) -> Request<Body> {
     let mut builder = Request::builder().method("GET").uri(uri);
     if let Some(token) = token {
@@ -118,37 +102,6 @@ async fn health_answers_without_a_token() {
 }
 
 #[tokio::test]
-async fn health_still_answers_when_no_admin_token_is_configured() {
-    let dir = scratch_dir("health-noadmin");
-    let app = almanac::shell::build_router_with_probes(state(&dir, None));
-
-    let response = app.oneshot(get("/healthz", None)).await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[tokio::test]
-async fn the_debug_status_needs_the_admin_token() {
-    let dir = scratch_dir("status-auth");
-    let st = state(&dir, Some(ADMIN_TOKEN));
-
-    let no_token = almanac::shell::build_router_with_probes(Arc::clone(&st))
-        .oneshot(get("/v1/debug/status", None))
-        .await
-        .unwrap();
-    assert_eq!(no_token.status(), StatusCode::UNAUTHORIZED);
-
-    let wrong = almanac::shell::build_router_with_probes(Arc::clone(&st))
-        .oneshot(get("/v1/debug/status", Some("nope")))
-        .await
-        .unwrap();
-    assert_eq!(wrong.status(), StatusCode::UNAUTHORIZED);
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[tokio::test]
 async fn the_debug_status_reports_profiles_and_the_journal() {
     let dir = scratch_dir("status");
     let app = almanac::shell::build_router_with_probes(state(&dir, Some(ADMIN_TOKEN)));
@@ -163,30 +116,6 @@ async fn the_debug_status_reports_profiles_and_the_journal() {
     assert_eq!(body["profiles"][0]["source_id"], "home-assistant");
     assert_eq!(body["profiles"][0]["target_calendar_id"], "primary");
     assert_eq!(body["journal"]["count"], 0);
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[tokio::test]
-async fn an_unconfigured_admin_surface_refuses_rather_than_opening_up() {
-    // Fail-closed: a forgotten ALMANAC_BOOTSTRAP_TOKEN must not leave
-    // the debug views readable by anyone on the LAN.
-    let dir = scratch_dir("noadmin");
-    let app = almanac::shell::build_router_with_probes(state(&dir, None));
-
-    let response = app
-        .oneshot(get("/v1/debug/status", Some("anything")))
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    let body = body_json(response).await;
-    assert!(
-        body["remedy"]
-            .as_str()
-            .unwrap()
-            .contains("ALMANAC_BOOTSTRAP_TOKEN"),
-        "the error must name the variable that fixes it"
-    );
 
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -254,20 +183,6 @@ async fn a_captured_authorization_header_is_redacted() {
         raw.contains("<redacted>"),
         "and it must say it redacted one"
     );
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[tokio::test]
-async fn capturing_needs_the_admin_token_too() {
-    let dir = scratch_dir("capture-auth");
-    let app = almanac::shell::build_router_with_probes(state(&dir, Some(ADMIN_TOKEN)));
-
-    let response = app
-        .oneshot(post("/v1/debug/capture/x", None, "{}"))
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -344,94 +259,6 @@ async fn dry_run_on_an_unknown_source_says_where_to_look() {
             .contains("/v1/debug/status")
     );
 
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-const CAPTURE_TOKEN: &str = "capture-only-token";
-
-#[tokio::test]
-async fn the_capture_token_can_post_a_capture() {
-    // S2: the whole point is that a system you are still investigating
-    // can be given a credential that does this and nothing else.
-    let dir = scratch_dir("capture-token");
-    let state = state_with_capture_token(&dir, Some(ADMIN_TOKEN), CAPTURE_TOKEN);
-
-    let response = almanac::shell::build_router_with_probes(Arc::clone(&state))
-        .oneshot(post(
-            "/v1/debug/capture/unknown-app",
-            Some(CAPTURE_TOKEN),
-            r#"{"hello":"world"}"#,
-        ))
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[tokio::test]
-async fn the_capture_token_cannot_read_captures_back() {
-    // If it could, handing it to a third party would expose every
-    // other captured payload to that party.
-    let dir = scratch_dir("capture-token-read");
-    let state = state_with_capture_token(&dir, Some(ADMIN_TOKEN), CAPTURE_TOKEN);
-
-    let response = almanac::shell::build_router_with_probes(Arc::clone(&state))
-        .oneshot(get("/v1/debug/capture", Some(CAPTURE_TOKEN)))
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[tokio::test]
-async fn the_capture_token_opens_nothing_else_on_the_admin_surface() {
-    let dir = scratch_dir("capture-token-scope");
-    let state = state_with_capture_token(&dir, Some(ADMIN_TOKEN), CAPTURE_TOKEN);
-
-    for uri in ["/v1/debug/status", "/v1/debug/capture"] {
-        let response = almanac::shell::build_router_with_probes(Arc::clone(&state))
-            .oneshot(get(uri, Some(CAPTURE_TOKEN)))
-            .await
-            .unwrap();
-        assert_eq!(
-            response.status(),
-            StatusCode::UNAUTHORIZED,
-            "{uri} must not accept the capture token"
-        );
-    }
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[tokio::test]
-async fn the_admin_token_still_posts_captures() {
-    // The operator's own credential must not stop working just
-    // because a narrower one now exists.
-    let dir = scratch_dir("capture-admin-still");
-    let state = state_with_capture_token(&dir, Some(ADMIN_TOKEN), CAPTURE_TOKEN);
-
-    let response = almanac::shell::build_router_with_probes(Arc::clone(&state))
-        .oneshot(post("/v1/debug/capture/x", Some(ADMIN_TOKEN), "{}"))
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[tokio::test]
-async fn a_wrong_capture_token_is_still_refused() {
-    let dir = scratch_dir("capture-token-wrong");
-    let state = state_with_capture_token(&dir, Some(ADMIN_TOKEN), CAPTURE_TOKEN);
-
-    let response = almanac::shell::build_router_with_probes(Arc::clone(&state))
-        .oneshot(post("/v1/debug/capture/x", Some("not-the-token"), "{}"))
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     std::fs::remove_dir_all(&dir).ok();
 }
 
@@ -573,16 +400,13 @@ async fn a_scrape_never_carries_a_token_a_calendar_id_or_payload_content() {
     // is not a leak that can be taken back.
     let dir = scratch_dir("metrics-no-secrets");
     let state = state(&dir, Some(ADMIN_TOKEN));
+    // 4.0.0: the tokens are the kit's and never touch this state; the
+    // bearer below is decoration for the in-process router.
     let token = "a-source-token-that-must-never-be-scraped";
-    state
-        .tokens
-        .issue("home-assistant", token, "2026-08-29T00:00:00Z")
-        .await
-        .unwrap();
 
     // Accept a real payload so the counters are non-zero and the
     // journal has something in it.
-    let app = almanac::shell::ingest::routes().with_state(Arc::clone(&state));
+    let app = almanac::shell::build_router_with_probes(Arc::clone(&state));
     let accepted = app
         .oneshot(post(
             "/v1/ingest/home-assistant",

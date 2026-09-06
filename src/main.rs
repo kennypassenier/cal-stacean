@@ -17,7 +17,6 @@ use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 
 use almanac::core::paths::{self, Paths};
-use almanac::core::token::hash_token;
 use almanac::shell;
 use almanac::shell::admin::{BOOTSTRAP_TOKEN_ENV, CAPTURE_TOKEN_ENV};
 use almanac::shell::auth::{TokenManager, load_credentials};
@@ -25,9 +24,8 @@ use almanac::shell::calendar_client::GoogleCalendarClient;
 use almanac::shell::datadir::DataDirLock;
 use almanac::shell::ingest::AppState;
 use almanac::shell::journal::{DEFAULT_MAX_BYTES, Journal};
-use almanac::shell::kit::{AlmanacMetrics, JournalSubsystem};
+use almanac::shell::kit::{import_source_tokens, mount};
 use almanac::shell::notify::Notifier;
-use almanac::shell::token_store::TokenStore;
 use axum::Router;
 use chassis::{App, AppSpec, Control};
 use tokio::sync::watch;
@@ -40,8 +38,8 @@ const STARTUP_RETRY_WAITS: [u64; 5] = [2, 5, 15, 60, 300];
 /// What `--help` says beyond the kit's knobs: Almanac's own environment.
 const HELP_EXTRA: &str = "Almanac's own environment (read next to the knobs above):
   ALMANAC_SECRET_KEY            64 hex chars; seals the token store (mandatory)
-  ALMANAC_BOOTSTRAP_TOKEN       dashboard login and admin bearer; unset = admin surface refuses
-  ALMANAC_CAPTURE_TOKEN         capture-only credential for a system under investigation (S2)
+  ALMANAC_TOKEN                 the login token (kit knob): dashboard login and admin bearer; required
+                                (was ALMANAC_BOOTSTRAP_TOKEN; ALMANAC_CAPTURE_TOKEN is gone — use a client token)
   ALMANAC_NOTIFY_WEBHOOK        Home Assistant webhook for almanac's own notifications
   ALMANAC_HEARTBEAT_INTERVAL_SECS  one heartbeat line per interval (default 3600, 0 = off)
   ALMANAC_CALENDAR_OWNER        who new calendars are shared with
@@ -133,6 +131,26 @@ async fn main() -> ExitCode {
         return app.run().await;
     }
     let checking = matches!(app.control, Some(Control::Check));
+    // 4.0.0: the login token is the kit's ALMANAC_TOKEN. A 3.x environment
+    // file still naming the old variable is refused with the rename spelled
+    // out (standing rule 12); the capture token is simply no longer read.
+    if env
+        .get(BOOTSTRAP_TOKEN_ENV)
+        .is_some_and(|v| !v.trim().is_empty())
+    {
+        return die(format!(
+            "{BOOTSTRAP_TOKEN_ENV} is the 3.x name; 4.0.0 reads ALMANAC_TOKEN (the kit's login token)\n  remedy: rename the variable in the environment file (latch.env on CT 112) and restart"
+        ));
+    }
+    let mut warnings = warnings;
+    if env
+        .get(CAPTURE_TOKEN_ENV)
+        .is_some_and(|v| !v.trim().is_empty())
+    {
+        warnings.push(format!(
+            "{CAPTURE_TOKEN_ENV} is no longer read since 4.0.0: a system that posts captures gets a client token from the Sources page instead; remove the variable"
+        ));
+    }
     let state_dir = app
         .loaded
         .as_ref()
@@ -168,18 +186,6 @@ async fn main() -> ExitCode {
         Ok(credentials) => credentials,
         Err(e) => return die(format!("{e}\n  remedy: {}", e.remedy())),
     };
-    // The encrypted token store is the only authority on who may post
-    // (AR17 as amended). It refuses to load without its key rather than
-    // falling back to something unencrypted, and the key is proven to open
-    // it before anything is served (L3): a wrong key otherwise surfaces as
-    // every source getting a 401 against a store that looks intact.
-    let token_store = match TokenStore::load(paths.token_store.clone()) {
-        Ok(store) => store,
-        Err(e) => return die(format!("{e}\n  remedy: {}", e.remedy())),
-    };
-    if let Err(e) = token_store.verify_key_opens_store().await {
-        return die(format!("{e}\n  remedy: {}", e.remedy()));
-    }
     if checking {
         app.on_check(|| {
             println!("almanac {} --check: ok", env!("CARGO_PKG_VERSION"));
@@ -215,32 +221,12 @@ async fn main() -> ExitCode {
     let tokens = TokenManager::with_metrics(http.clone(), credentials, Arc::clone(&metrics));
     let tokens = Arc::new(tokens);
 
-    // Absent means the admin surface (K11/M11/M9) refuses every request
-    // rather than opening up; the ingest paths are unaffected.
-    let bootstrap_token_hash = env
-        .get(BOOTSTRAP_TOKEN_ENV)
-        .map(|t| t.trim())
-        .filter(|t| !t.is_empty())
-        .map(hash_token);
-    // S2: a capture-only credential, so learning what an unknown webhook
-    // sends never requires handing that system the dashboard token.
-    let capture_token_hash = env
-        .get(CAPTURE_TOKEN_ENV)
-        .map(|t| t.trim())
-        .filter(|t| !t.is_empty())
-        .map(hash_token);
-    let bootstrap_set = bootstrap_token_hash.is_some();
-    let capture_set = capture_token_hash.is_some();
-
     let state = Arc::new(
         AppState::new(
             profiles,
             Journal::new(paths.journal.clone(), DEFAULT_MAX_BYTES),
             GoogleCalendarClient::new(http.clone(), Arc::clone(&tokens)),
-            bootstrap_token_hash,
-            token_store,
         )
-        .with_capture_token(capture_token_hash)
         .with_profiles_dir(paths.profiles_dir.clone())
         .with_calendar_owner(
             env.get("ALMANAC_CALENDAR_OWNER")
@@ -257,8 +243,6 @@ async fn main() -> ExitCode {
         Err(e) => return die(e),
     };
 
-    app.subsystem(JournalSubsystem(Arc::clone(&state)));
-    app.metrics_source(AlmanacMetrics(Arc::clone(&state)));
     // AR25: never restart under an investigation. The kit's autonomous
     // loop asks before every check; a retained capture defers it.
     {
@@ -297,10 +281,25 @@ async fn main() -> ExitCode {
             tokio::spawn(async move { notifier.send(ha).await });
         });
     }
-    // Public as far as the kit is concerned: ingest carries per-source
-    // bearer tokens, admin the bootstrap token, the dashboard its cookie.
-    app.api_routes(shell::build_router(Arc::clone(&state)));
-
+    // A2-1: the per-source tokens are the kit's clients. The 3.x store is
+    // read once, on the first start of 4.0.0, and copied unchanged into
+    // the kit's sealed file, so every source keeps its token.
+    match import_source_tokens(
+        &state_dir,
+        &paths.token_store,
+        env.get("ALMANAC_SECRET_KEY")
+            .map(String::as_str)
+            .unwrap_or_default(),
+    )
+    .await
+    {
+        Ok(0) => {}
+        Ok(count) => eprintln!(
+            "almanac: imported {count} source token(s) from the 3.x store into the kit's client store; every source keeps its token"
+        ),
+        Err(e) => return die(format!("{e:#}")),
+    }
+    mount(&mut app, Arc::clone(&state));
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let worker: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>> = Arc::new(Mutex::new(None));
     {
@@ -331,7 +330,7 @@ async fn main() -> ExitCode {
                 tracing::warn!(
                     directory = %profiles_dir.display(),
                     unusable = unusable.len(),
-                    "no usable mapping profiles — almanac is serving no sources; add one from /dashboard/sources"
+                    "no usable mapping profiles — almanac is serving no sources; add one from /sources"
                 );
             } else {
                 tracing::info!(
@@ -348,20 +347,6 @@ async fn main() -> ExitCode {
                     "journal holds undelivered entries from a previous run; they go out first"
                 );
             }
-            if !bootstrap_set {
-                tracing::warn!(
-                    "{BOOTSTRAP_TOKEN_ENV} is not set — the debug and capture surfaces will refuse \
-                     every request. Set it via `latch run --` to use them."
-                );
-            }
-            if !capture_set {
-                tracing::info!(
-                    "{CAPTURE_TOKEN_ENV} is not set — posting a capture needs the bootstrap token, \
-                     which is also the dashboard login. Set a capture token before pointing a \
-                     third-party system at the capture endpoint."
-                );
-            }
-
             // M14: one line per interval, so a silent almanac and a wedged
             // one are distinguishable.
             match shell::heartbeat::interval_from(|key| heartbeat_env.get(key).cloned()) {

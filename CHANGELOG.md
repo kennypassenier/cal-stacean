@@ -11,6 +11,44 @@ against before it installs anything.
 
 ## [Unreleased]
 
+Built on [chassis-rs](https://github.com/kennypassenier/chassis-rs) v1.5.0.
+Step 2 of the chassis migration (2026-09-06, form A2-1…A2-4): the kit
+owns the dashboard shell, the login and session, the per-source tokens
+and the door; Almanac keeps its profiles, calendars, captures, journal
+and delivery. The environment changes, hence 4.0.0.
+
+### Migration
+
+- **`ALMANAC_BOOTSTRAP_TOKEN` → `ALMANAC_TOKEN`** (the kit's login token;
+  also the admin bearer for scripts). No alias: a start with the old name
+  still set refuses with the rename spelled out. Rename it in the latch
+  env file on CT 112 before installing 4.0.0.
+- **`ALMANAC_CAPTURE_TOKEN` is gone.** A system that posts captures gets a
+  client token from the Sources page; a start with the variable still set
+  warns once. Any client token may post a capture; reading captures back,
+  `/v1/debug/status` and dry-run need the admin (login token).
+- **Source tokens keep working.** On the first start of 4.0.0 every live
+  token in `tokens.json` is copied unchanged into the kit's sealed
+  `clients.json.enc` (logged as `imported N source token(s)`); JobTracker
+  and the other sources change nothing. `tokens.json` is not read again.
+- **Pages.** `/` is the kit's status page (Journal and Sources sections);
+  profiles and calendars are on `/sources`, captures on `/captures`, the
+  tokens on `/clients` (labelled Sources). `/dashboard*` redirects.
+  Everyone logged in logs in once more (the session is the kit's).
+- **Gone:** Almanac's own login page and session cookie, the token
+  endpoints under `/dashboard/sources/{id}/…`, the vendored Bootstrap and
+  kp-themes files, `theme-bridge.css`, `almanac-*.js`, the K25 checksum
+  gate, `scripts/vendor-kp-themes.sh`, `tests/dashboard_http.rs`,
+  `tests/admin_http.rs` and `tests/ingest_http.rs` (their assertions live
+  in `tests/kit_dashboard.rs` and `tests/kit_door.rs`, which run Almanac
+  through the real `chassis::App`).
+
+### Added
+
+- `shell::kit::mount` assembles Almanac on the kit for the binary and the
+  test harness alike; `shell::kit::import_source_tokens` is the one-time
+  import; Journal and Sources status sections on `/`.
+
 ## [3.0.0] - 2026-09-06
 
 Built on [chassis-rs](https://github.com/kennypassenier/chassis-rs) v1.4.0.

@@ -40,10 +40,14 @@ use crate::shell::ingest::AppState;
 
 /// Builds the application's Axum router.
 pub fn build_router(state: Arc<AppState>) -> Router {
-    ingest::routes()
-        .merge(admin::routes())
-        .merge(dashboard::routes())
-        .with_state(state)
+    ingest::routes().merge(admin::routes()).with_state(state)
+}
+
+/// Almanac's own dashboard pages (Sources, Captures), handed to
+/// `App::dashboard_routes`: the kit renders them inside its layout behind
+/// the admin login and refuses cross-origin form posts (4.0.0).
+pub fn pages(state: Arc<AppState>) -> Router {
+    dashboard::routes().with_state(state)
 }
 
 /// [`build_router`] plus `/healthz` and `/metrics` as the kit serves them
@@ -79,5 +83,9 @@ pub fn build_router_with_probes(state: Arc<AppState>) -> Router {
                 }
             }),
         );
-    build_router(state).merge(probes)
+    // In-process tests have no kit door in front: every request arrives as
+    // the admin, so the API handlers' `Caller` extractor finds one.
+    build_router(state)
+        .layer(axum::Extension(chassis::Caller::Admin))
+        .merge(probes)
 }

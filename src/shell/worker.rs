@@ -383,8 +383,6 @@ pub(crate) mod tests {
             HashMap::new(),
             Journal::new(dir.join("journal.jsonl"), DEFAULT_MAX_BYTES),
             GoogleCalendarClient::new(http, tokens),
-            None,
-            crate::shell::token_store::TokenStore::with_key(dir.join("tokens.json"), [5u8; 32]),
         ));
 
         (state, dir)
@@ -514,8 +512,6 @@ target_calendar_id = "household"
                 ),
                 &calendar.base_url,
             ),
-            None,
-            crate::shell::token_store::TokenStore::with_key(dir.join("tokens.json"), [5u8; 32]),
         ));
 
         state

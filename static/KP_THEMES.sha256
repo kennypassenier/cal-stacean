@@ -1,9 +1,0 @@
-# @kp-soft/themes v3.0.0, commit d5d25c3, vendored 2026-09-05.
-# sha256 of each file's upstream content: everything after the blank
-# line that closes almanac's provenance header.
-261087057dff87483a0518f4b4ceec394c969559d5340508a5ae0c101c6e832c  static/themes.css
-2488777f797d9987fdf11123bf151d3507461d70d7eb5a68a02dfef57857ab46  static/kp-components.css
-11a890a91cc6c797987608a525af40cbd2328357f76491c8dfd1616d152fdd21  static/theme-core.js
-1cdd3d6a63df88ed644731351551022538e96adabecc5cd177c3e498daf51836  static/theme-picker.js
-cb5fa72d531bd797cdb2320f382d3dae7f93260adfa877294cfca72a0c102301  static/theme-registry.js
-813fcb1627bdf6d89a812aba1f7525654a8377ee166fb1019be021785465deb9  static/strings.js

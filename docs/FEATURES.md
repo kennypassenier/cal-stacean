@@ -692,3 +692,52 @@ it is "Choose a theme" now, and so are the new group headings.
 menu now split into a "Light" and a "Dark" section, every theme in the
 section the registry puts it in, a theme click still applying and
 surviving a reload.
+
+## Step 2 amendment (the kit's dashboard and door, 2026-09-06)
+
+Decided in the Almanac step-2 form and its deep-dive round (A2-1…A2-4,
+Kenny, 2026-09-06): every project works the way a new `chassis new`
+project works, so the dashboard, the login, the session, the per-source
+tokens and the door move to chassis-rs. Almanac 4.0.0.
+
+- **M12 (dashboard).** The login page, the session cookie, logout and
+  the token controls (issue, reveal for 10 s, copy a working command,
+  re-issue, revoke) are the kit's, on its clients page labelled
+  **Sources**. Almanac keeps two pages inside the kit's layout: `/sources`
+  (profiles, calendars, unusable files — K21/K23/K24) and `/captures`
+  (M11); `/` is the kit's status page with a Journal and a Sources
+  section. The 3.x addresses `/dashboard`, `/dashboard/sources`,
+  `/dashboard/captures` redirect. Proven by `tests/kit_dashboard.rs`
+  through the real `chassis::App`; the plaintext-scan rule holds (the kit
+  never renders a token into a page; `tests/kit_door.rs` asserts it for the
+  imported ones).
+- **K6 (per-source tokens).** A source's token is a kit client under the
+  source's own name. The kit's door checks the bearer; the ingest handler
+  then checks that the client's name is the source in the path (the admin's
+  login token passes as any source, for Kenny's scripts). Unknown source
+  and foreign token still answer the same 401. The 3.x tokens are copied
+  unchanged into the kit's sealed `clients.json.enc` on the first start of
+  4.0.0 (`shell::kit::import_source_tokens`), so JobTracker and every
+  other source keep their configuration; `tokens.json` stays as history.
+- **M11 (capture).** `POST /v1/debug/capture/{label}` sits behind the
+  kit's door like every API route and accepts any client token (or the
+  admin); `ALMANAC_CAPTURE_TOKEN` is gone — a system under investigation
+  gets a client token from the Sources page, which is exactly as narrow
+  (it cannot read captures back, list status or dry-run: those need the
+  admin). The kit's **Send test** button posts a capture named
+  `dashboard-test`.
+- **K21 (manage sources).** Adding a source writes the profile and loads
+  it without a restart as before; its token is then issued on the kit's
+  Sources page (two steps instead of one button). Deleting a source removes
+  its profile and its kit client. Reload and the unusable-files list are
+  unchanged.
+- **K24 (calendars).** Unchanged in behaviour, rendered by the `/sources`
+  template; the create-lag and delete-lag memories still apply.
+- **K25 (themes).** The kit's layout ships kp-themes 3.1.0 and its picker;
+  Almanac's vendored copy, Bootstrap, `theme-bridge.css`, the checksum gate
+  and the picker tests are gone.
+- **Environment.** `ALMANAC_BOOTSTRAP_TOKEN` is renamed to the kit's
+  `ALMANAC_TOKEN` (hard, no alias — A2-4: 4.0.0); a start with the old
+  name set refuses and says so. `ALMANAC_SECRET_KEY` now also seals the
+  kit's client and session stores (same 64-hex value).
+

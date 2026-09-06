@@ -28,12 +28,12 @@ use tokio::sync::Mutex;
 use crate::core::journal::Entry;
 use crate::core::metrics::Metrics;
 use crate::core::observability::{CaptureRecord, RingBuffer, RouteRecord};
+use chassis::Caller;
+
 use crate::core::profile::Profile;
-use crate::core::token::parse_bearer;
 use crate::shell::calendar_client::GoogleCalendarClient;
 use crate::shell::delivery::{KeyLocks, deliver};
 use crate::shell::journal::Journal;
-use crate::shell::token_store::TokenStore;
 
 /// Header a source may send to make a redelivery converge instead of
 /// duplicating, when it has no natural per-payload id (M7).
@@ -100,21 +100,10 @@ pub struct AppState {
     /// Separate from `now` so retention never has to parse a timestamp
     /// back out of a formatted string.
     pub now_unix: Box<dyn Fn() -> u64 + Send + Sync>,
-    /// SHA-256 of the bootstrap token that guards the admin surface
-    /// (AR17 as amended). `None` when unset, in which case the admin
-    /// surface refuses everything rather than opening up.
-    pub bootstrap_token_hash: Option<String>,
-    /// SHA-256 of the capture-only token (S2). `None` when unset, in
-    /// which case posting a capture needs the bootstrap token — the
-    /// old behaviour, kept so an existing deployment does not break.
-    pub capture_token_hash: Option<String>,
     /// Recent delivery routes, for the K11 debug surface.
     pub routes: Mutex<RingBuffer<RouteRecord>>,
     /// Verbatim captured requests, for the M11 capture surface.
     pub captures: Mutex<RingBuffer<CaptureRecord>>,
-    /// Encrypted per-source tokens (M12/AR17) — the single source of
-    /// truth for who may post, replacing the profile's `token_hash`.
-    pub tokens: TokenStore,
     /// M13 counters. Shared with the token manager, which is built
     /// before this state exists, so it is an `Arc` rather than owned.
     pub metrics: Arc<Metrics>,
@@ -134,8 +123,6 @@ impl AppState {
         profiles: HashMap<String, Profile>,
         journal: Journal,
         client: GoogleCalendarClient,
-        bootstrap_token_hash: Option<String>,
-        tokens: TokenStore,
     ) -> Self {
         Self {
             profiles: std::sync::RwLock::new(Arc::new(profiles)),
@@ -145,7 +132,6 @@ impl AppState {
             created_calendars: std::sync::Mutex::new(std::collections::HashMap::new()),
             journal,
             client,
-            tokens,
             locks: KeyLocks::new(),
             now: Box::new(|| chrono::Utc::now().to_rfc3339()),
             now_unix: Box::new(|| {
@@ -154,8 +140,6 @@ impl AppState {
                     .map(|d| d.as_secs())
                     .unwrap_or(0)
             }),
-            bootstrap_token_hash,
-            capture_token_hash: None,
             routes: Mutex::new(RingBuffer::new(HISTORY_CAPACITY)),
             captures: Mutex::new(RingBuffer::new(HISTORY_CAPACITY)),
             metrics: Arc::new(Metrics::default()),
@@ -337,15 +321,6 @@ impl AppState {
         Some(captures.len())
     }
 
-    /// Sets the capture-only token (S2). A builder method rather than
-    /// another constructor argument: only `main` supplies it, and
-    /// reading the environment from inside the constructor would give
-    /// every test an invisible dependency on ambient state.
-    pub fn with_capture_token(mut self, hash: Option<String>) -> Self {
-        self.capture_token_hash = hash;
-        self
-    }
-
     /// Same, but with both clocks pinned — for tests that assert on
     /// timestamps or drive expiry without waiting.
     #[cfg(test)]
@@ -353,13 +328,11 @@ impl AppState {
         profiles: HashMap<String, Profile>,
         journal: Journal,
         client: GoogleCalendarClient,
-        bootstrap_token_hash: Option<String>,
-        tokens: TokenStore,
     ) -> Self {
         Self {
             now: Box::new(|| "2026-08-28T09:00:00+00:00".to_string()),
             now_unix: Box::new(|| 1_787_000_000),
-            ..Self::new(profiles, journal, client, bootstrap_token_hash, tokens)
+            ..Self::new(profiles, journal, client)
         }
     }
 }
@@ -373,38 +346,34 @@ fn error(status: StatusCode, message: &str, remedy: &str) -> Reply {
     )
 }
 
-/// Resolves the profile for `source_id` and checks the request's
-/// bearer token against it.
+/// Resolves the profile for `source_id` and decides whether the caller
+/// may post as that source.
 ///
-/// An unknown source and a wrong token both answer 401 with the same
-/// body: distinguishing them would tell an unauthenticated caller
-/// which source ids exist.
+/// 4.0.0: the kit's door already checked the bearer token and named the
+/// caller; what is left is whether THIS token belongs to THIS source — a
+/// client under the source's own name, or the admin (K6). An unknown
+/// source and a foreign token both answer 401 with the same body:
+/// distinguishing them would tell a caller which source ids exist.
 async fn authenticate(
     state: &AppState,
     source_id: &str,
-    headers: &HeaderMap,
+    caller: &Caller,
 ) -> Result<Profile, Reply> {
     let unauthorized = || {
         error(
             StatusCode::UNAUTHORIZED,
             "unknown source or invalid token",
-            "check the Authorization: Bearer header matches the token issued for this source",
+            "post with the token issued for this source on the Sources page (the client's name is the source id)",
         )
     };
-
     let profiles = state.profiles();
     let Some(profile) = profiles.get(source_id) else {
         return Err(unauthorized());
     };
-
-    let presented = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(parse_bearer);
-
-    match presented {
-        Some(token) if state.tokens.verify(source_id, token).await => Ok(profile.clone()),
-        _ => Err(unauthorized()),
+    match caller {
+        Caller::Admin => Ok(profile.clone()),
+        Caller::Client { name, .. } if name == source_id => Ok(profile.clone()),
+        Caller::Client { .. } => Err(unauthorized()),
     }
 }
 
@@ -503,10 +472,11 @@ fn build_entry(state: &AppState, source_id: &str, headers: &HeaderMap, payload: 
 async fn ingest(
     State(state): State<Arc<AppState>>,
     Path(source_id): Path<String>,
+    caller: Caller,
     headers: HeaderMap,
     Json(payload): Json<Value>,
 ) -> Reply {
-    let profile = match authenticate(&state, &source_id, &headers).await {
+    let profile = match authenticate(&state, &source_id, &caller).await {
         Ok(profile) => profile,
         Err(reply) => return reply,
     };
@@ -544,10 +514,11 @@ async fn ingest(
 async fn ingest_sync(
     State(state): State<Arc<AppState>>,
     Path(source_id): Path<String>,
+    caller: Caller,
     headers: HeaderMap,
     Json(payload): Json<Value>,
 ) -> Reply {
-    let profile = match authenticate(&state, &source_id, &headers).await {
+    let profile = match authenticate(&state, &source_id, &caller).await {
         Ok(profile) => profile,
         Err(reply) => return reply,
     };
@@ -630,9 +601,9 @@ async fn ingest_sync(
 async fn delete_event(
     State(state): State<Arc<AppState>>,
     Path((source_id, external_id)): Path<(String, String)>,
-    headers: HeaderMap,
+    caller: Caller,
 ) -> Reply {
-    let profile = match authenticate(&state, &source_id, &headers).await {
+    let profile = match authenticate(&state, &source_id, &caller).await {
         Ok(profile) => profile,
         Err(reply) => return reply,
     };
@@ -716,7 +687,6 @@ pub fn routes() -> Router<Arc<AppState>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shell::token_store::TokenStore;
 
     fn profile(source_id: &str) -> Profile {
         let toml = format!(
@@ -746,10 +716,8 @@ target_calendar_id = "primary"
     /// State holding one source whose token is already issued in the
     /// encrypted store — the only place ingest auth consults since the
     /// AR17 amendment.
-    async fn state_with(source_id: &str, token: &str) -> AppState {
+    async fn state_with(source_id: &str, _token: &str) -> AppState {
         let dir = scratch_dir();
-        let store = TokenStore::with_key(dir.join("tokens.json"), [5u8; 32]);
-        store.issue(source_id, token, "now").await.unwrap();
 
         let mut profiles = HashMap::new();
         profiles.insert(source_id.to_string(), profile(source_id));
@@ -771,8 +739,6 @@ target_calendar_id = "primary"
                     },
                 ),
             ),
-            None,
-            store,
         )
     }
 
@@ -785,130 +751,51 @@ target_calendar_id = "primary"
         headers
     }
 
-    #[tokio::test]
-    async fn the_right_token_authenticates() {
-        let state = state_with("home-assistant", "correct-token").await;
-        let result = authenticate(
-            &state,
-            "home-assistant",
-            &headers_with_token("correct-token"),
-        )
-        .await;
-        assert!(result.is_ok());
+    fn client(name: &str) -> Caller {
+        Caller::Client {
+            id: format!("source-{name}"),
+            name: name.to_string(),
+        }
     }
 
     #[tokio::test]
-    async fn a_wrong_token_is_rejected_with_401() {
+    async fn the_sources_own_client_authenticates() {
         let state = state_with("home-assistant", "correct-token").await;
-        let err = authenticate(&state, "home-assistant", &headers_with_token("wrong-token"))
-            .await
-            .unwrap_err();
-        assert_eq!(err.0, StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn a_missing_authorization_header_is_rejected() {
-        let state = state_with("home-assistant", "correct-token").await;
-        let err = authenticate(&state, "home-assistant", &HeaderMap::new())
-            .await
-            .unwrap_err();
-        assert_eq!(err.0, StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn one_sources_token_does_not_open_another_source() {
-        // K6's actual promise: revoking or leaking one source's token
-        // must not affect the others.
-        let state = state_with("home-assistant", "ha-token").await;
-        state
-            .tokens
-            .issue("uptime-kuma", "kuma-token", "now")
-            .await
-            .unwrap();
-
-        let mut profiles = (*state.profiles()).clone();
-        profiles.insert("uptime-kuma".to_string(), profile("uptime-kuma"));
-        state.set_profiles(profiles);
-
         assert!(
-            authenticate(&state, "uptime-kuma", &headers_with_token("kuma-token"))
+            authenticate(&state, "home-assistant", &client("home-assistant"))
                 .await
                 .is_ok()
         );
-        assert_eq!(
-            authenticate(&state, "uptime-kuma", &headers_with_token("ha-token"))
-                .await
-                .unwrap_err()
-                .0,
-            StatusCode::UNAUTHORIZED
-        );
-    }
-
-    #[tokio::test]
-    async fn an_unknown_source_is_indistinguishable_from_a_bad_token() {
-        // Answering 404 for an unknown source would let an
-        // unauthenticated caller enumerate which sources exist.
-        let state = state_with("home-assistant", "correct-token").await;
-        let unknown = authenticate(
-            &state,
-            "does-not-exist",
-            &headers_with_token("correct-token"),
-        )
-        .await
-        .unwrap_err();
-        let bad_token = authenticate(&state, "home-assistant", &headers_with_token("wrong"))
-            .await
-            .unwrap_err();
-        assert_eq!(unknown.0, bad_token.0);
-        assert_eq!(format!("{:?}", unknown.1.0), format!("{:?}", bad_token.1.0));
-    }
-
-    #[tokio::test]
-    async fn a_revoked_token_stops_working_immediately() {
-        // M12's sharpest promise: revocation takes effect on the next
-        // request, not on the next restart.
-        let state = state_with("home-assistant", "correct-token").await;
+        // The admin's login token posts as any source (Kenny's scripts).
         assert!(
-            authenticate(
-                &state,
-                "home-assistant",
-                &headers_with_token("correct-token")
-            )
-            .await
-            .is_ok()
-        );
-
-        state.tokens.revoke("home-assistant").await.unwrap();
-
-        assert_eq!(
-            authenticate(
-                &state,
-                "home-assistant",
-                &headers_with_token("correct-token")
-            )
-            .await
-            .unwrap_err()
-            .0,
-            StatusCode::UNAUTHORIZED
+            authenticate(&state, "home-assistant", &Caller::Admin)
+                .await
+                .is_ok()
         );
     }
 
     #[tokio::test]
-    async fn a_source_with_no_issued_token_cannot_post_at_all() {
-        // A profile existing is not permission; the token store is the
-        // only authority since the AR17 amendment.
-        let state = state_with("home-assistant", "correct-token").await;
+    async fn a_foreign_client_and_an_unknown_source_answer_the_same_401() {
+        // K6's actual promise: one source's token must not open another,
+        // and the answer must not reveal which source ids exist.
+        let state = state_with("home-assistant", "ha-token").await;
         let mut profiles = (*state.profiles()).clone();
         profiles.insert("uptime-kuma".to_string(), profile("uptime-kuma"));
         state.set_profiles(profiles);
-
-        assert_eq!(
-            authenticate(&state, "uptime-kuma", &headers_with_token("anything"))
+        assert!(
+            authenticate(&state, "uptime-kuma", &client("uptime-kuma"))
                 .await
-                .unwrap_err()
-                .0,
-            StatusCode::UNAUTHORIZED
+                .is_ok()
         );
+        let foreign = authenticate(&state, "uptime-kuma", &client("home-assistant"))
+            .await
+            .unwrap_err();
+        assert_eq!(foreign.0, StatusCode::UNAUTHORIZED);
+        let unknown = authenticate(&state, "nope", &client("nope"))
+            .await
+            .unwrap_err();
+        assert_eq!(unknown.0, StatusCode::UNAUTHORIZED);
+        assert_eq!(foreign.1.0["message"], unknown.1.0["message"]);
     }
 
     #[tokio::test]
@@ -1007,12 +894,10 @@ target_calendar_id = "primary"
     /// synchronous path can actually deliver.
     async fn state_with_calendar(
         source_id: &str,
-        token: &str,
+        _token: &str,
         calendar: &crate::shell::testing::CalendarStub,
     ) -> AppState {
         let dir = scratch_dir();
-        let store = TokenStore::with_key(dir.join("tokens.json"), [5u8; 32]);
-        store.issue(source_id, token, "now").await.unwrap();
 
         let mut profiles = HashMap::new();
         profiles.insert(source_id.to_string(), profile(source_id));
@@ -1032,8 +917,6 @@ target_calendar_id = "primary"
                 ),
                 &calendar.base_url,
             ),
-            None,
-            store,
         )
     }
 
@@ -1065,6 +948,7 @@ target_calendar_id = "primary"
         let (status, Json(body)) = ingest_sync(
             State(Arc::clone(&state)),
             Path("home-assistant".to_string()),
+            Caller::Admin,
             bearer("tok"),
             Json(sync_payload()),
         )
@@ -1093,6 +977,7 @@ target_calendar_id = "primary"
         let (status, _) = ingest_sync(
             State(Arc::clone(&state)),
             Path("home-assistant".to_string()),
+            client("someone-else"),
             bearer("wrong-token"),
             Json(sync_payload()),
         )
@@ -1123,6 +1008,7 @@ target_calendar_id = "primary"
         let (status, _) = ingest_sync(
             State(Arc::clone(&state)),
             Path("home-assistant".to_string()),
+            Caller::Admin,
             bearer("tok"),
             Json(sync_payload()),
         )
@@ -1160,7 +1046,7 @@ target_calendar_id = "primary"
         let (status, Json(body)) = delete_event(
             State(Arc::clone(&state)),
             Path(("home-assistant".to_string(), "task-7".to_string())),
-            bearer("tok"),
+            Caller::Admin,
         )
         .await;
 
@@ -1190,7 +1076,7 @@ target_calendar_id = "primary"
         let (status, Json(body)) = delete_event(
             State(Arc::clone(&state)),
             Path(("home-assistant".to_string(), "never-existed".to_string())),
-            bearer("tok"),
+            Caller::Admin,
         )
         .await;
 
@@ -1227,7 +1113,7 @@ target_calendar_id = "primary"
         let (status, _) = delete_event(
             State(Arc::clone(&state)),
             Path(("home-assistant".to_string(), "task-7".to_string())),
-            bearer("tok"),
+            Caller::Admin,
         )
         .await;
 
@@ -1256,7 +1142,7 @@ target_calendar_id = "primary"
         let (status, _) = delete_event(
             State(Arc::clone(&state)),
             Path(("home-assistant".to_string(), "task-7".to_string())),
-            bearer("wrong-token"),
+            client("someone-else"),
         )
         .await;
 
@@ -1277,7 +1163,7 @@ target_calendar_id = "primary"
         let (status, _) = delete_event(
             State(Arc::clone(&state)),
             Path(("home-assistant".to_string(), "task-7".to_string())),
-            bearer("tok"),
+            Caller::Admin,
         )
         .await;
 
