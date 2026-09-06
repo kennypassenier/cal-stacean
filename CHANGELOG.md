@@ -11,6 +11,75 @@ against before it installs anything.
 
 ## [Unreleased]
 
+Built on [chassis-rs](https://github.com/kennypassenier/chassis-rs) v1.4.0.
+Ingest, the journal, delivery, the token store, the dashboard and the
+Google client are unchanged; the kit now owns the command line, the
+transport knobs, logging, `/healthz`, `/metrics`, readiness (`Type=notify`),
+the graceful stop and — replacing 1 900 lines of Almanac's own — signed
+self-update. The environment and `/healthz` change, hence 3.0.0.
+
+### Migration
+
+- **Environment.** `ALMANAC_BIND` → `ALMANAC_LISTEN` (alias with a warning);
+  `ALMANAC_SELF_UPDATE` (on/off) → `ALMANAC_UPDATE_MODE`
+  (`off`/`supervised`/`autonomous`; the alias maps on → autonomous, off →
+  off, with a warning; **unset now means off** — 2.x checked and installed
+  by default when a release key was compiled in); `ALMANAC_UPDATE_URL` now names the directory holding
+  `VERSION`, `SHA256SUMS`, `SHA256SUMS.minisig` and the binary — a 2.x value
+  ending in `/releases` is completed to `/releases/latest/download` with a
+  warning; unset it and the kit derives it from the repository. `RUST_LOG`
+  → `ALMANAC_LOG` (`ALMANAC_LOG_FORMAT=json` is new). **`ALMANAC_STATE_DIR`
+  must point at an existing directory** (the kit probes it at `--check` and
+  start; on CT 112 that is `/opt/almanac`, so nothing moves). The per-path
+  overrides (`ALMANAC_PROFILES_DIR`, `_DATA_DIR`, `_JOURNAL`, `_TOKEN_STORE`)
+  still work but are deprecated in favour of the one root (K20).
+  Unchanged: `ALMANAC_SECRET_KEY`, `ALMANAC_BOOTSTRAP_TOKEN`,
+  `ALMANAC_CAPTURE_TOKEN`, `ALMANAC_NOTIFY_WEBHOOK`,
+  `ALMANAC_HEARTBEAT_INTERVAL_SECS`, `ALMANAC_CALENDAR_OWNER`, the Google
+  credentials via `latch run --`.
+- **Command line.** `--version`, `--check`, `update` keep their meaning
+  (`--check` still prints `almanac <v> --check: ok` and leaves a running
+  instance alone); new are `--help`, `--print-config`, `--healthcheck`,
+  `gen-secret`, `rekey`. An unknown argument is refused with exit 1 (2.x
+  ignored it).
+- **`/healthz`** = `{"status","version","subsystems":{"journal":{"ok",
+  "detail"}}}`; still unauthenticated, still ignorant of Google on purpose;
+  **503 only when the journal cannot be read.** `/metrics` keeps every
+  `almanac_*` series except `almanac_build_info`, which the kit now emits
+  (same name, same label), and gains `almanac_uptime_seconds` and
+  `almanac_http_requests_total`.
+- **Startup order.** The listener binds first and `READY=1` follows; the
+  Google authentication retry (AR21) runs after the bind, and the delivery
+  worker starts once it succeeds — the journal accepts events meanwhile, as
+  the design always promised. A permanently broken key still exits 1.
+- **Under the kit's layers:** request ids, security headers with a strict
+  CSP (`script-src 'self'`, `font-src 'self'`), an in-flight cap, a request
+  timeout and a body limit (1 MiB, `ALMANAC_MAX_BODY_BYTES`). The dashboard's
+  inline scripts moved to `/static/almanac-*.js`, the no-flash snippet is
+  the kit's `theme-boot.js`, and the display fonts are served from the kit's
+  vendored set — no CDN, works offline.
+- **Self-update** is the kit's: releases must carry `almanac`, `SHA256SUMS`,
+  `SHA256SUMS.minisig` with the trusted comment `kennypassenier/almanac
+  v<version>` and `VERSION`; `scripts/sign-release.sh` writes them, the
+  release workflow (`release.yml`, new) builds the binary and the image.
+  **Existing releases (≤ 2.4.0) carry minisign's default comment and are
+  refused** — the first kit-based version must be installed by hand (or by
+  the homelab). Autonomous checks are deferred while captures are retained
+  (AR25, via the kit's update gate); a rolled-back version is skipped until
+  a newer one appears (kit CF-3). The notifications `almanac-update`,
+  `-reverted` and `-unverified` still reach Home Assistant: the kit's
+  `on_update_event` (1.3.0, asked for by this migration) hands every update
+  event to Almanac's own notifier. AR24's "three failed verifications
+  before notifying" is the kit's knob since 1.4.0
+  (`ALMANAC_UPDATE_NOTIFY_AFTER_FAILURES`, default 3 — Almanac's value): a
+  failing release host is reported once, on the third failed check, and
+  once more when checks succeed again.
+- **Deployment.** `Type=notify` unit with the kit's hardening and the latch
+  wrapper (`deploy/almanac.service`), binary at `/opt/almanac/bin/almanac`,
+  `deploy/service.yml` for the homelab stack with `update_cmd`, journald
+  drop-in. `ExecStartPre=… --check` refuses a broken environment before
+  the old binary is stopped.
+
 ### Added
 
 - **`almanac --version` / `-V`** prints the compiled version and exits,
@@ -29,6 +98,8 @@ against before it installs anything.
   correctly disagree — noted in `docs/OPERATIONS_RUNBOOK.md` R12b after
   the same session found it during 2.4.0's own rollout. `/healthz` is
   what answers "what is actually running"; `--version` is for the file.
+
+## [2.4.0] — 2026-09-05
 
 ### Changed
 
@@ -106,77 +177,6 @@ against before it installs anything.
   package styles its own picker now, and what remains in that file is
   the one thing it cannot do for us — pointing Bootstrap's variables at
   its tokens.
-
-## [3.0.0] — 2026-09-05 (unreleased; branch `chassis-migration`)
-
-Built on [chassis-rs](https://github.com/kennypassenier/chassis-rs) v1.2.0.
-Ingest, the journal, delivery, the token store, the dashboard and the
-Google client are unchanged; the kit now owns the command line, the
-transport knobs, logging, `/healthz`, `/metrics`, readiness (`Type=notify`),
-the graceful stop and — replacing 1 900 lines of Almanac's own — signed
-self-update. The environment and `/healthz` change, hence 3.0.0.
-
-### Migration
-
-- **Environment.** `ALMANAC_BIND` → `ALMANAC_LISTEN` (alias with a warning);
-  `ALMANAC_SELF_UPDATE` (on/off) → `ALMANAC_UPDATE_MODE`
-  (`off`/`supervised`/`autonomous`; the alias maps on → autonomous, off →
-  off, with a warning; **unset now means off** — 2.x checked and installed
-  by default when a release key was compiled in); `ALMANAC_UPDATE_URL` now names the directory holding
-  `VERSION`, `SHA256SUMS`, `SHA256SUMS.minisig` and the binary — a 2.x value
-  ending in `/releases` is completed to `/releases/latest/download` with a
-  warning; unset it and the kit derives it from the repository. `RUST_LOG`
-  → `ALMANAC_LOG` (`ALMANAC_LOG_FORMAT=json` is new). **`ALMANAC_STATE_DIR`
-  must point at an existing directory** (the kit probes it at `--check` and
-  start; on CT 112 that is `/opt/almanac`, so nothing moves). The per-path
-  overrides (`ALMANAC_PROFILES_DIR`, `_DATA_DIR`, `_JOURNAL`, `_TOKEN_STORE`)
-  still work but are deprecated in favour of the one root (K20).
-  Unchanged: `ALMANAC_SECRET_KEY`, `ALMANAC_BOOTSTRAP_TOKEN`,
-  `ALMANAC_CAPTURE_TOKEN`, `ALMANAC_NOTIFY_WEBHOOK`,
-  `ALMANAC_HEARTBEAT_INTERVAL_SECS`, `ALMANAC_CALENDAR_OWNER`, the Google
-  credentials via `latch run --`.
-- **Command line.** `--version`, `--check`, `update` keep their meaning
-  (`--check` still prints `almanac <v> --check: ok` and leaves a running
-  instance alone); new are `--help`, `--print-config`, `--healthcheck`,
-  `gen-secret`, `rekey`. An unknown argument is refused with exit 1 (2.x
-  ignored it).
-- **`/healthz`** = `{"status","version","subsystems":{"journal":{"ok",
-  "detail"}}}`; still unauthenticated, still ignorant of Google on purpose;
-  **503 only when the journal cannot be read.** `/metrics` keeps every
-  `almanac_*` series except `almanac_build_info`, which the kit now emits
-  (same name, same label), and gains `almanac_uptime_seconds` and
-  `almanac_http_requests_total`.
-- **Startup order.** The listener binds first and `READY=1` follows; the
-  Google authentication retry (AR21) runs after the bind, and the delivery
-  worker starts once it succeeds — the journal accepts events meanwhile, as
-  the design always promised. A permanently broken key still exits 1.
-- **Under the kit's layers:** request ids, security headers with a strict
-  CSP (`script-src 'self'`, `font-src 'self'`), an in-flight cap, a request
-  timeout and a body limit (1 MiB, `ALMANAC_MAX_BODY_BYTES`). The dashboard's
-  inline scripts moved to `/static/almanac-*.js`, the no-flash snippet is
-  the kit's `theme-boot.js`, and the display fonts are served from the kit's
-  vendored set — no CDN, works offline.
-- **Self-update** is the kit's: releases must carry `almanac`, `SHA256SUMS`,
-  `SHA256SUMS.minisig` with the trusted comment `kennypassenier/almanac
-  v<version>` and `VERSION`; `scripts/sign-release.sh` writes them, the
-  release workflow (`release.yml`, new) builds the binary and the image.
-  **Existing releases (≤ 2.4.0) carry minisign's default comment and are
-  refused** — the first kit-based version must be installed by hand (or by
-  the homelab). Autonomous checks are deferred while captures are retained
-  (AR25, via the kit's update gate); a rolled-back version is skipped until
-  a newer one appears (kit CF-3). The notifications `almanac-update`,
-  `-reverted` and `-unverified` still reach Home Assistant: the kit's
-  `on_update_event` (1.3.0, asked for by this migration) hands every update
-  event to Almanac's own notifier. AR24's "three failed verifications
-  before notifying" is the kit's knob since 1.4.0
-  (`ALMANAC_UPDATE_NOTIFY_AFTER_FAILURES`, default 3 — Almanac's value): a
-  failing release host is reported once, on the third failed check, and
-  once more when checks succeed again.
-- **Deployment.** `Type=notify` unit with the kit's hardening and the latch
-  wrapper (`deploy/almanac.service`), binary at `/opt/almanac/bin/almanac`,
-  `deploy/service.yml` for the homelab stack with `update_cmd`, journald
-  drop-in. `ExecStartPre=… --check` refuses a broken environment before
-  the old binary is stopped.
 
 ## [2.3.0] — 2026-09-03
 
